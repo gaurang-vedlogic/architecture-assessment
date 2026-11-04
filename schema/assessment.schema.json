@@ -1,0 +1,377 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://architecture-review/schema/assessment.schema.json",
+  "title": "Codebase Assessment",
+  "description": "The single machine-readable artifact produced by a review. Every generated report renders from this file.",
+  "type": "object",
+  "required": ["meta", "objective", "scorecard", "findings"],
+  "additionalProperties": false,
+
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["app", "client", "reviewDate"],
+      "additionalProperties": false,
+      "properties": {
+        "app": { "type": "string", "description": "Short slug used in filenames, e.g. 'shss-dg'." },
+        "productName": { "type": "string", "description": "Human-readable product name for the title page." },
+        "client": { "type": "string" },
+        "org": { "type": "string", "description": "Owning organisation or business unit." },
+        "repository": { "type": "string", "description": "e.g. 'Troperty/shss-dg' or a path." },
+        "repoPath": { "type": "string", "description": "Absolute path to the assessed repository on disk. When set, the report is written to <repoPath>/architecture-review/ instead of this tool's output/ directory, so the deliverable ships with the code it describes. --out always overrides." },
+        "branch": { "type": "string" },
+        "commit": { "type": "string" },
+        "version": { "type": "string" },
+        "stack": { "type": "string", "description": "One-line description of the technology stack." },
+        "reviewDate": { "type": "string", "description": "ISO date, YYYY-MM-DD." },
+        "preparedBy": { "type": "string", "description": "Overrides config/branding.json companyName." },
+        "assessmentType": { "type": "string" },
+        "documentStatus": { "type": "string", "default": "CONFIDENTIAL" },
+        "catalogVersion": { "type": "string", "description": "Standards/dependency catalog reference, if any." },
+        "scope": { "type": "string", "description": "One paragraph: what was and was not in scope." }
+      }
+    },
+
+    "verdict": {
+      "type": "object",
+      "description": "Release-gate verdict. Omit entirely for advisory assessments with no deployment decision.",
+      "required": ["prod"],
+      "additionalProperties": false,
+      "properties": {
+        "prod": { "enum": ["APPROVED", "APPROVE_WITH_CONDITIONS", "BLOCK_RELEASE"] },
+        "devTest": { "enum": ["APPROVED", "APPROVE_WITH_CONDITIONS", "BLOCK_RELEASE"] },
+        "summary": { "type": "string", "description": "One paragraph justifying the verdict." },
+        "blockers": {
+          "type": "array",
+          "description": "Human-readable blocking conditions, each referencing a finding id.",
+          "items": {
+            "type": "object",
+            "required": ["text"],
+            "additionalProperties": false,
+            "properties": {
+              "text": { "type": "string" },
+              "findingId": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+
+    "objective": {
+      "type": "object",
+      "required": ["narrative"],
+      "additionalProperties": false,
+      "properties": {
+        "narrative": { "type": "string", "description": "What the engagement set out to do and what it produced." },
+        "metrics": {
+          "type": "array",
+          "description": "Headline stat band at the top of the report. 3-6 entries reads best.",
+          "items": {
+            "type": "object",
+            "required": ["value", "label"],
+            "additionalProperties": false,
+            "properties": {
+              "value": { "type": "string" },
+              "label": { "type": "string" },
+              "detail": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+
+    "executiveSummary": { "type": "string", "description": "2-4 paragraphs. Leads the decision brief." },
+
+    "scorecard": {
+      "type": "object",
+      "required": ["dimensions"],
+      "additionalProperties": false,
+      "properties": {
+        "targetLabel": { "type": "string", "description": "e.g. 'target 4.2'. Rendered on the radar legend." },
+        "overall": { "type": "number", "description": "Optional; computed as the mean if omitted." },
+        "narrative": { "type": "string" },
+        "dimensions": {
+          "type": "array",
+          "minItems": 3,
+          "description": "The scored dimensions. The default seven are in scoring/dimensions.md, but the set is configurable per engagement.",
+          "items": {
+            "type": "object",
+            "required": ["id", "label", "current", "target"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string" },
+              "label": { "type": "string" },
+              "current": { "type": "number", "minimum": 0, "maximum": 5 },
+              "target": { "type": "number", "minimum": 0, "maximum": 5 },
+              "maturity": {
+                "enum": ["Absent", "Initial", "Developing", "Defined", "Managed", "Optimising"],
+                "description": "Derived from current; see scoring/maturity-model.md."
+              },
+              "keyGap": { "type": "string", "description": "The specific findings driving this score." }
+            }
+          }
+        }
+      }
+    },
+
+    "capabilities": {
+      "type": "array",
+      "description": "Per-practice snapshot. Renders as the capability matrix.",
+      "items": {
+        "type": "object",
+        "required": ["practice", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "practice": { "type": "string" },
+          "status": { "enum": ["good", "partial", "absent"] },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+
+    "systemModel": {
+      "type": "object",
+      "description": "Written before defect hunting. See METHODOLOGY.md.",
+      "additionalProperties": false,
+      "properties": {
+        "purpose": { "type": "string" },
+        "actors": { "type": "string", "description": "Trust boundaries and the realistic attacker." },
+        "dataFlows": { "type": "string" },
+        "invariants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["statement", "status"],
+            "additionalProperties": false,
+            "properties": {
+              "statement": { "type": "string", "description": "Positive form: 'X always Y'." },
+              "status": { "enum": ["HOLDS", "VIOLATED", "CHECK"] },
+              "note": { "type": "string" },
+              "findingId": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+
+    "threatModel": { "type": "string" },
+
+    "coverage": {
+      "type": "object",
+      "description": "What was actually read. Makes the findings falsifiable.",
+      "additionalProperties": false,
+      "properties": {
+        "method": { "type": "string" },
+        "size": { "type": "string", "description": "LOC / file count / module count, and how it was counted." },
+        "deepRead": { "type": "array", "items": { "type": "string" } },
+        "grepSwept": { "type": "array", "items": { "type": "string" } },
+        "notRead": { "type": "array", "items": { "type": "string" } },
+        "caveats": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "layer", "criticality", "priority", "phase", "impact"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "description": "Stable within this assessment, e.g. 'F10'." },
+          "title": { "type": "string" },
+          "ruleId": { "type": "string", "description": "The rules/ catalog ID this matched, e.g. 'SEC-001'." },
+          "group": { "type": "string", "description": "Section heading in the findings tables, e.g. 'Backend', 'Dependencies'." },
+          "layer": { "enum": ["Frontend", "Backend", "Mobile", "Database", "Infrastructure", "Integrations"] },
+          "dimension": { "type": "string", "description": "Must match a scorecard dimension id." },
+          "riskDimension": {
+            "enum": ["Security", "Performance", "Scalability", "Reliability", "Maintainability"],
+            "description": "Explicit heatmap column. Defaults to a mapping from `dimension` when omitted."
+          },
+          "criticality": { "enum": ["High", "Medium", "Low"] },
+          "priority": { "enum": ["P0", "P1", "P2"] },
+          "phase": { "type": "integer", "minimum": 1, "maximum": 3 },
+          "gate": {
+            "enum": ["blocks-prod", "blocks-all", "warning", "clear"],
+            "description": "Release-gate weight. Omit for advisory assessments."
+          },
+          "confidence": { "enum": ["Confirmed", "Needs-runtime-check", "Plausible"] },
+          "claim": { "type": "string", "description": "One sentence stating the defect." },
+          "evidence": {
+            "type": "array",
+            "description": "Real file references. A finding with no evidence is not a finding.",
+            "items": {
+              "type": "object",
+              "required": ["file"],
+              "additionalProperties": false,
+              "properties": {
+                "file": { "type": "string" },
+                "line": { "type": "integer" },
+                "snippet": { "type": "string" },
+                "note": { "type": "string" }
+              }
+            }
+          },
+          "instances": { "type": "integer", "description": "Total occurrences when consolidated as a systemic finding." },
+          "reasoning": { "type": "string", "description": "Why this violates an invariant or standard." },
+          "reproduction": { "type": "string" },
+          "impact": { "type": "string", "description": "Benefit-led sentence. Renders in the report's Expected Impact column." },
+          "refutation": { "type": "string", "description": "What was tried to disprove this, and why it survived." },
+          "remediation": { "type": "string" },
+          "sampleFix": { "type": "string", "description": "Short code or config snippet." },
+          "effortDays": { "type": ["number", "null"], "description": "Man-days. null renders as an em dash." },
+          "role": { "type": "string" },
+          "rationale": { "type": "string", "description": "Required when priority or phase deviates from the rule default." }
+        }
+      }
+    },
+
+    "gaps": {
+      "type": "array",
+      "description": "Capabilities that are absent entirely and are recommended additions — the target-state view. Distinct from findings: a finding is a defect in something that exists, a gap is something that does not exist at all (containerisation, orchestration, IaC, DR, APM). Gap effort rolls into the same phase roadmap as findings.",
+      "items": {
+        "type": "object",
+        "required": ["capability", "recommendation"],
+        "additionalProperties": false,
+        "properties": {
+          "capability": { "type": "string", "description": "The missing capability, e.g. 'Container orchestration'." },
+          "area": { "type": "string", "description": "Grouping heading, e.g. 'Infrastructure', 'Delivery', 'Resilience'." },
+          "status": { "enum": ["missing", "partial"], "default": "missing" },
+          "why": { "type": "string", "description": "Why it matters for this specific system — not a generic benefit statement." },
+          "recommendation": { "type": "string", "description": "The concrete recommended implementation." },
+          "priority": { "enum": ["P0", "P1", "P2"] },
+          "phase": { "type": "integer", "minimum": 1, "maximum": 3 },
+          "effortDays": { "type": ["number", "null"] },
+          "role": { "type": "string" },
+          "layer": { "enum": ["Frontend", "Backend", "Mobile", "Database", "Infrastructure", "Integrations"] }
+        }
+      }
+    },
+
+    "refutedCandidates": {
+      "type": "array",
+      "description": "Considered and disproved. Evidence that the review was rigorous.",
+      "items": {
+        "type": "object",
+        "required": ["claim", "reasoning"],
+        "additionalProperties": false,
+        "properties": {
+          "claim": { "type": "string" },
+          "verdict": { "enum": ["Refuted", "Downgraded"], "default": "Refuted" },
+          "step": { "type": "integer", "minimum": 1, "maximum": 4, "description": "Which methodology step killed it." },
+          "reasoning": { "type": "string" }
+        }
+      }
+    },
+
+    "positivePosture": {
+      "type": "array",
+      "description": "Verified strengths, with the same evidence discipline as findings.",
+      "items": {
+        "type": "object",
+        "required": ["title", "detail"],
+        "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string" },
+          "detail": { "type": "string" }
+        }
+      }
+    },
+
+    "inventory": {
+      "type": "array",
+      "description": "Application inventory table: counts and key facts.",
+      "items": {
+        "type": "object",
+        "required": ["item", "value"],
+        "additionalProperties": false,
+        "properties": {
+          "item": { "type": "string" },
+          "value": { "type": "string" }
+        }
+      }
+    },
+
+    "releaseGates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["gate", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "gate": { "type": "string" },
+          "findingRefs": { "type": "array", "items": { "type": "string" } },
+          "note": { "type": "string", "description": "Shown when there are no finding refs, e.g. 'none found'." },
+          "devTest": { "enum": ["Clear", "Warning", "Blocks"] },
+          "prod": { "enum": ["Clear", "Warning", "Blocks"] },
+          "status": { "enum": ["Pass", "Open", "Needs-runtime-check"] }
+        }
+      }
+    },
+
+    "phases": {
+      "type": "array",
+      "description": "Delivery roadmap. Findings are assigned by their phase field; this supplies the headings and objectives.",
+      "items": {
+        "type": "object",
+        "required": ["number", "name", "objective"],
+        "additionalProperties": false,
+        "properties": {
+          "number": { "type": "integer", "minimum": 1, "maximum": 3 },
+          "name": { "type": "string" },
+          "objective": { "type": "string" },
+          "totalDays": { "type": "number", "description": "Optional; recomputed from findings and warned on mismatch." }
+        }
+      }
+    },
+
+    "suggestions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["suggestion", "impact"],
+        "additionalProperties": false,
+        "properties": {
+          "suggestion": { "type": "string" },
+          "description": { "type": "string" },
+          "impact": { "type": "string" }
+        }
+      }
+    },
+
+    "architecturalRecommendations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["aspect", "current", "recommended"],
+        "additionalProperties": false,
+        "properties": {
+          "aspect": { "type": "string" },
+          "current": { "type": "string" },
+          "recommended": { "type": "string" },
+          "recommendation": { "type": "string" }
+        }
+      }
+    },
+
+    "architecturalNarrative": { "type": "string" },
+
+    "lookingAhead": { "type": "string", "description": "Closing section. Falls back to config/branding.json closingBody." },
+
+    "executionNotes": {
+      "type": "array",
+      "description": "Decisions taken after the review that change how findings are executed (e.g. a platform migration that absorbs some fixes). Rendered in the remediation plan only; the report stays a record of what was found.",
+      "items": {
+        "type": "object",
+        "required": ["title", "text"],
+        "additionalProperties": false,
+        "properties": {
+          "date": { "type": "string", "description": "ISO date the decision was taken." },
+          "title": { "type": "string" },
+          "text": { "type": "string" },
+          "findingRefs": { "type": "array", "items": { "type": "string" }, "description": "Finding or gap ids this note changes the execution of." },
+          "reference": { "type": "string", "description": "Companion document, e.g. a platform plan file beside the report." }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,1653 @@
+{
+  "meta": {
+    "app": "butistri-app",
+    "productName": "Butistri — The Whole World of Beauty",
+    "client": "Butistri",
+    "org": "Butistri",
+    "repository": "D:\\GG\\Butistri (Lovable export, not a git checkout)",
+    "repoPath": "D:/GG/Butistri",
+    "branch": "n/a — exported folder, no git metadata",
+    "version": "0.0.0",
+    "stack": "React 18 · Vite 5 · TypeScript 5 (strict off) · shadcn/ui + Tailwind · TanStack Query 5 · react-router 6 · Supabase (Postgres + RLS, Auth, Storage, Realtime) · Deno edge functions → Lovable AI gateway",
+    "reviewDate": "2026-09-13",
+    "assessmentType": "Technical Landscape Assessment & Recommendations Report",
+    "documentStatus": "CONFIDENTIAL",
+    "scope": "Manual static review of the exported Butistri repository: the React single-page application, the nine Supabase migrations and their row-level-security policies, the two Deno edge functions, build/lint/test configuration and the committed dependency lockfile. The live Supabase project (policies for tables whose migrations are not in the repo, auth settings, backups, deployed function configuration) was not accessible and is called out wherever a finding depends on it."
+  },
+  "verdict": {
+    "prod": "BLOCK_RELEASE",
+    "devTest": "APPROVE_WITH_CONDITIONS",
+    "summary": "**A well-scaffolded Supabase application whose business rules live in the browser.** Row-level security is present on every table the repository defines, the role model is sound in design, and no secret reaches the bundle. But the four things the platform sells trust on — the verified badge, the loyalty wallet, the booking, and the admin login — are each either writable by the user they are meant to constrain or wrong in what they persist.\n\n**Blocking production:**\n\n- The sign-in page ships six demo accounts including `admin@butistri.com`, all with the password `Demo@1234` printed on screen. If that account exists in the production project, anyone is an administrator.\n- Business owners can set their own `verified` flag, `rating` and `review_count` directly (confirmed for rental partners; the same policy shape is used for salons, academies and artists).\n- Any signed-in user can write any balance and the `elite` tier straight into their wallet row.\n- The booking flow persists neither the time slot the customer chose nor the second and later services, and shifts the date by one day for Indian users.\n\nNothing here blocks dev/test. The repository should move under CI before remediation starts, since none of these fixes can currently be protected by a test.",
+    "blockers": [
+      {
+        "text": "Confirm the demo accounts, in particular `admin@butistri.com`, do not exist in the production project, and remove the shared password from the sign-in page",
+        "findingId": "F1"
+      },
+      {
+        "text": "Trust and reputation columns (`verified`, `rating`, `review_count`, verification `status`) must not be updatable by the row owner",
+        "findingId": "F2"
+      },
+      {
+        "text": "Wallet balance and tier must be computed server-side from recorded actions, never accepted from the client",
+        "findingId": "F3"
+      },
+      {
+        "text": "Bookings must persist the chosen time slot and every selected service, in the customer's timezone",
+        "findingId": "F4"
+      }
+    ]
+  },
+  "objective": {
+    "narrative": "To assess the Butistri marketplace codebase — a Lovable-generated React application on Supabase — before it takes real customers, business owners and their KYC documents. The review establishes what the platform promises (verified businesses, earned loyalty status, confirmed bookings, private documents), checks whether the code and database policies actually enforce those promises, and produces a sequenced remediation roadmap with man-day estimates.",
+    "metrics": [
+      {
+        "value": "≈24k",
+        "label": "Lines Reviewed",
+        "detail": "31.3k incl. 3.3k generated types and 4.0k shadcn/ui"
+      },
+      {
+        "value": "22",
+        "label": "Total Findings",
+        "detail": "P0=4  P1=9  P2=9"
+      },
+      {
+        "value": "46 / 63",
+        "label": "Tables Without Migration Source",
+        "detail": "policies not reviewable from the repo"
+      },
+      {
+        "value": "8",
+        "label": "Missing Capabilities",
+        "detail": "CI, error monitoring, environments, DR…"
+      },
+      {
+        "value": "≈73",
+        "label": "Est. Total Effort",
+        "detail": "Man-days across all phases"
+      }
+    ]
+  },
+  "executiveSummary": "Butistri is an India-only beauty marketplace: customers discover salons, artists, academies and rental partners, book appointments, send enquiries, message businesses and earn loyalty credits; business owners run dashboards and submit KYC documents for a verified badge. The codebase is a Lovable export — a React/Vite single-page app talking directly to Supabase, with Postgres row-level security as the only server-side enforcement and two small Deno functions for AI try-on.\n\nThe scaffolding is better than most generated code. Every table defined in the repository has RLS enabled with explicit grants, admin checks go through a security-definer `has_role()` function, the signup trigger refuses to hand out the admin role, verification documents sit in a private bucket behind 300-second signed URLs, and the AI key never leaves the server. Those are real strengths and should be protected during remediation.\n\nThe problem is where the business rules live. Because every write goes straight from the browser to a table guarded only by \"owner may update own row\", the rules that make the marketplace trustworthy are unenforced: a rental partner can set `verified = true` on itself, any user can write an arbitrary wallet balance and promote themselves to Elite, and a booking saves a midnight-UTC timestamp instead of the 3 PM slot the customer confirmed. On top of that, the sign-in page publishes an admin demo login with a shared password. Four P0 findings follow from this, and they are individually cheap — roughly eight man-days together — because the fix is the same shape each time: move the state transition into a Postgres function and revoke direct column writes.\n\nAround the code there is no delivery discipline yet: no CI, one placeholder test, TypeScript strict mode off, no error monitoring, a single Supabase project serving as both preview and production, and a migration history that starts mid-life (46 of 63 tables have no source in the repo). The roadmap therefore pairs the P0 fixes with the minimum pipeline needed to keep them fixed, then addresses atomicity, pagination, moderation and the missing environments. Overall maturity scores **1.9 / 5**; the realistic twelve-month target is **3.5**.",
+  "scorecard": {
+    "targetLabel": "target 3.5",
+    "narrative": "Scored as a public marketplace holding customer phone numbers, chat history and owner KYC documents. Security and data are held to a 4.0 target on that basis. Observability and DevOps are scored on what exists in the repository — effectively nothing — rather than on what Lovable's hosted platform may provide invisibly.",
+    "dimensions": [
+      {
+        "id": "architecture",
+        "label": "Architecture Quality",
+        "current": 2.5,
+        "target": 3.5,
+        "keyGap": "A hooks/api layer exists but 38 pages bypass it with 92 inline queries and resolve 'which business do I own' four different ways (F14). Every business rule — wallet maths, verification, booking — runs in the browser against whole-row owner policies, which is the root of F2, F3 and F4."
+      },
+      {
+        "id": "security",
+        "label": "Security Posture",
+        "current": 1.5,
+        "target": 4,
+        "keyGap": "Demo admin credentials on the sign-in page (F1), owner-writable `verified`/`rating` columns (F2), client-writable wallet (F3), roles written from the client against an unreviewable policy (F5), 15 high-severity dependency advisories (F22). Held above 1.0 by consistent RLS, `has_role()` and private KYC storage."
+      },
+      {
+        "id": "scalability",
+        "label": "Scalability Readiness",
+        "current": 2.5,
+        "target": 3.5,
+        "keyGap": "Unbounded `select *` on providers, queues and analytics with client-side aggregation (F12); paid AI calls with no per-user quota (F7); a single ~95-page bundle with no code splitting (F15). TanStack Query caching is the one deliberate scalability practice."
+      },
+      {
+        "id": "maintainability",
+        "label": "Code Maintainability",
+        "current": 2,
+        "target": 3.5,
+        "keyGap": "One placeholder test (F10); `strict: false`, `noImplicitAny: false`, 282 `any` sites and `no-unused-vars` disabled (F13); admin panel rendering hardcoded mock rows (F16); dead guard logic (F21). Consistent shadcn/Tailwind conventions keep it off the floor."
+      },
+      {
+        "id": "observability",
+        "label": "Observability & Monitoring",
+        "current": 1,
+        "target": 3,
+        "keyGap": "No error reporting, no structured logging, five `console.*` calls in total, and the session-tracking hook is defined but never mounted (F17). A production failure is invisible until a user reports it."
+      },
+      {
+        "id": "devops",
+        "label": "DevOps Maturity",
+        "current": 1.5,
+        "target": 3,
+        "keyGap": "No CI pipeline, deploys via Lovable 'Publish', one Supabase project for every environment, three competing lockfiles (F19). Versioned migrations exist but the history is incomplete (F8)."
+      },
+      {
+        "id": "data",
+        "label": "Data Integrity & DB Health",
+        "current": 2,
+        "target": 4,
+        "keyGap": "Booking persists the wrong timestamp and drops services (F4); migration history cannot rebuild the schema (F8); four multi-step writes are non-atomic (F11); tracking tables grow without retention (F17); KYC documents kept indefinitely (F18). FKs, cascades and indexes on the newer tables are good."
+      }
+    ]
+  },
+  "capabilities": [
+    {
+      "practice": "Row-level security on every table",
+      "status": "good",
+      "notes": "Every table defined in-repo has RLS enabled with per-role GRANTs. 46 tables' policies live only in the hosted project."
+    },
+    {
+      "practice": "Role model with server-side check",
+      "status": "partial",
+      "notes": "`has_role()` is SECURITY DEFINER and used in RLS; but roles are written from the client during onboarding (F5)."
+    },
+    {
+      "practice": "Secrets kept out of the bundle",
+      "status": "good",
+      "notes": "Only the publishable key ships; `LOVABLE_API_KEY` is read from Deno env."
+    },
+    {
+      "practice": "Column-level write control on trust fields",
+      "status": "absent",
+      "notes": "Owner policies allow updating every column, including `verified`, `rating`, wallet `balance` (F2, F3)."
+    },
+    {
+      "practice": "Server-side business logic",
+      "status": "absent",
+      "notes": "One RPC (`find_or_create_academy`). Wallet, verification, booking and community creation run as client sequences (F3, F11)."
+    },
+    {
+      "practice": "Input validation at the boundary",
+      "status": "absent",
+      "notes": "`zod` is a dependency but is imported nowhere outside shadcn/ui; forms write raw state."
+    },
+    {
+      "practice": "Automated tests",
+      "status": "absent",
+      "notes": "One `expect(true).toBe(true)` test (F10)."
+    },
+    {
+      "practice": "CI / quality gates",
+      "status": "absent",
+      "notes": "No pipeline definition of any kind."
+    },
+    {
+      "practice": "Error monitoring",
+      "status": "absent",
+      "notes": "No Sentry or equivalent; errors surface as toasts."
+    },
+    {
+      "practice": "Versioned migrations",
+      "status": "partial",
+      "notes": "Nine migrations from 2026-09-09 onward; the baseline schema is missing (F8)."
+    },
+    {
+      "practice": "Private document storage",
+      "status": "good",
+      "notes": "`verification-docs` bucket scoped by user folder, admin read, 300s signed URLs."
+    },
+    {
+      "practice": "Content moderation",
+      "status": "partial",
+      "notes": "Queue exists but nothing reads its verdict; images are public on upload (F6)."
+    },
+    {
+      "practice": "Rate limiting / abuse protection",
+      "status": "absent",
+      "notes": "Anonymous inserts (enquiries, reports, tracking) and paid AI calls are unmetered (F7)."
+    },
+    {
+      "practice": "Environment separation",
+      "status": "absent",
+      "notes": "One `project_id` in `supabase/config.toml` and one URL in `.env`."
+    }
+  ],
+  "systemModel": {
+    "purpose": "Butistri is a mobile-first, India-only beauty ecosystem. Consumers discover salons, makeup artists, academies, courses, events, jobs and a rental marketplace (bridal wear, jewellery, salon equipment); they book appointments, send guided enquiries, message businesses, keep mood boards and earn loyalty credits that unlock an 'Elite' tier with member pricing and priority slots. Business owners (salon, academy, celebrity stylist, rental partner) run dashboards, post offers and jobs, and submit KYC documents — Aadhaar/PAN, GST, shop licence — to earn a verified badge. Data held: user profiles with phone numbers, bookings, enquiries with phone and occasion, private chat, social posts, tracking rows, and owner identity documents. No payments are taken in-app; prices are displayed in rupees only.",
+    "actors": "Anonymous visitors (read every public table; may insert enquiries, issue reports and tracking rows) · authenticated consumers · business/academy/stylist/rental owners (self-selected at signup or onboarding) · administrators (role granted out-of-band; enforced by `has_role()` in RLS and mirrored by `RouteGuard` in the UI) · two Deno edge functions calling the Lovable AI gateway with a server-held key · Supabase Auth, Storage and Realtime. The realistic attacker is any self-registered account: signup is open, roles are self-chosen, and every write path is a direct PostgREST call the attacker can replay with arbitrary payloads. The secondary attacker is anyone who reads the sign-in page, because it lists an admin demo login.",
+    "dataFlows": "Browser → `@supabase/supabase-js` (publishable key, session persisted in `localStorage` or brokered to the Lovable editor in preview) → PostgREST with RLS as the sole authorisation layer → Postgres. Auth: email/password via Supabase Auth; `handle_new_user()` trigger creates the profile and an allow-listed role; `AuthContext` then loads `profiles` and `user_roles` to drive routing. Business writes go straight from page components or `hooks/api/*` to tables. AI try-on: page → `supabase.functions.invoke` → Deno function → `ai.gateway.lovable.dev` → base64 image back to the browser. Uploads: browser → Storage buckets (`portfolio`, `uploads` public; `verification-docs` private).",
+    "invariants": [
+      {
+        "statement": "Privileged credentials are never published to end users",
+        "status": "VIOLATED",
+        "findingId": "F1",
+        "note": "Six demo logins including an admin account and their shared password are rendered on the sign-in page."
+      },
+      {
+        "statement": "The verified badge, rating and review count are set only by platform processes, never by the profile owner",
+        "status": "VIOLATED",
+        "findingId": "F2"
+      },
+      {
+        "statement": "Loyalty balances and tier are derived server-side from recorded actions",
+        "status": "VIOLATED",
+        "findingId": "F3"
+      },
+      {
+        "statement": "A booking persists exactly what the customer confirmed — every service, the slot, in local time",
+        "status": "VIOLATED",
+        "findingId": "F4"
+      },
+      {
+        "statement": "A user cannot grant themselves a role they did not qualify for",
+        "status": "CHECK",
+        "findingId": "F5",
+        "note": "Signup path holds (trigger allow-list). Onboarding writes roles from the client; the `user_roles` insert policy is not in the repository."
+      },
+      {
+        "statement": "Images shown publicly have passed moderation",
+        "status": "VIOLATED",
+        "findingId": "F6"
+      },
+      {
+        "statement": "Paid third-party calls are bounded per user",
+        "status": "VIOLATED",
+        "findingId": "F7"
+      },
+      {
+        "statement": "The database schema and its policies can be rebuilt from the repository",
+        "status": "VIOLATED",
+        "findingId": "F8"
+      },
+      {
+        "statement": "No privileged secret reaches the browser bundle",
+        "status": "HOLDS",
+        "note": "Only `sb_publishable_…` and the project URL ship; `LOVABLE_API_KEY` and cron secrets are Deno env."
+      },
+      {
+        "statement": "Admin-only data is protected server-side, not only by the UI route guard",
+        "status": "HOLDS",
+        "note": "Every admin-managed table in the repo carries a `has_role(auth.uid(),'admin')` policy. Holds for repo-defined tables; CHECK for the 46 others."
+      },
+      {
+        "statement": "Verification documents are readable only by their owner and administrators",
+        "status": "HOLDS",
+        "note": "Storage policies scope by `auth.uid()` folder plus admin SELECT; URLs are signed for 300 seconds."
+      },
+      {
+        "statement": "A multi-step business write either completes fully or leaves no trace",
+        "status": "VIOLATED",
+        "findingId": "F11"
+      },
+      {
+        "statement": "A render failure in one component does not blank the application",
+        "status": "VIOLATED",
+        "findingId": "F9"
+      },
+      {
+        "statement": "User search input never changes query structure",
+        "status": "VIOLATED",
+        "findingId": "F20",
+        "note": "Downgraded to Low: only OR-terms on public rows can be injected."
+      },
+      {
+        "statement": "Every merge has passed lint, type-check and tests",
+        "status": "VIOLATED",
+        "note": "No pipeline exists (recorded as a gap) and the only test is a placeholder (F10).",
+        "findingId": "F10"
+      }
+    ]
+  },
+  "threatModel": "The platform's value is trust signals — verified badges, ratings, Elite status, confirmed bookings — and the PII behind them. The cheapest attacks are therefore not exploits but ordinary API calls: a self-registered rental partner marking itself verified with a five-star rating; a consumer writing `balance: 999999, tier: 'elite'` to their own wallet; a competitor injecting filter terms into search. The highest-impact attack is trivial if the demo admin account exists in production: log in with the password printed on the page, then approve verifications, read every KYC document via the admin storage policy, and moderate content. Anonymous attackers can only insert enquiries, reports and tracking rows, and call AI functions if JWT verification is off — a cost-exhaustion rather than data risk. Chat privacy and profile phone-number exposure depend on policies not present in the repository and are recorded as unverified rather than as findings.",
+  "coverage": {
+    "method": "Manual static review of the exported folder, single pass in execution order (entry → providers → router → guard → hooks → tables/policies → edge functions), with grep sweeps across the tree. One tool was run: `npm audit --package-lock-only` against the committed `package-lock.json`. No dynamic testing, no access to the hosted Supabase project.",
+    "size": "256 TypeScript/TSX/SQL files, ≈31,300 lines by `wc -l`; ≈24,000 lines of application code after excluding the 3,288-line generated `types.ts` and 4,047 lines of shadcn/ui. 95 page components, 46 app components, 29 `hooks/api` modules, 9 migrations (653 SQL lines), 2 edge functions plus a shared cron-auth helper, 63 tables in the generated types.",
+    "deepRead": [
+      "`src/App.tsx`, `src/main.tsx` — routing, providers, guard placement",
+      "`src/contexts/AuthContext.tsx`, `src/components/RouteGuard.tsx`, `src/hooks/useAuthGate.ts`, `src/components/RoleSwitcher.tsx`, `src/components/DashboardLayout.tsx` — the authentication and authorisation path",
+      "`src/integrations/supabase/client.ts`, `previewAuthStorage.ts` — client construction and session storage",
+      "`src/pages/Auth.tsx`, `src/pages/Onboarding.tsx`, `src/pages/ResetPassword.tsx` — signup, role assignment, recovery",
+      "`src/hooks/api/useWallet.ts`, `useVerification.ts`, `useImageModeration.ts`, `useAdminAnalytics.ts`, `useBookings.ts`, `useChat.ts`, `useConversations.ts`, `useLeads.ts`, `useAlumni.ts`, `useRentals.ts`, `useProviders.ts`, `useBusinessProfile.ts`, `useSupabaseQuery.ts`, `src/hooks/useTracking.ts`",
+      "`src/components/BookingFlow.tsx`, `src/pages/Wallet.tsx`, `src/pages/Elite.tsx`, `src/pages/Enquiry.tsx`, `src/pages/Admin.tsx`, `src/pages/AdminVerification.tsx`, `src/pages/dashboard/DashboardVerification.tsx`, `DashboardPortfolio.tsx`, `DashboardProfile.tsx`",
+      "All nine files in `supabase/migrations/` — every table, grant, policy, trigger and function they define",
+      "`supabase/functions/ai-hairstyle/index.ts`, `ai-bridal-look/index.ts`, `_shared/cron-auth.ts`, `supabase/config.toml`",
+      "`package.json`, `tsconfig.app.json`, `eslint.config.js`, `vite.config.ts`, `vitest.config.ts`, `src/test/*`, `.env`, `.gitignore`, `README.md`, `.lovable/plan/*.md` (for stated intent only)"
+    ],
+    "grepSwept": [
+      "`dangerouslySetInnerHTML`, `innerHTML`, `eval` — zero occurrences outside shadcn/ui",
+      "`localStorage` / `sessionStorage` — UI preferences and the Supabase session only",
+      "`service_role`, `secret`, `api_key` — no privileged material in `src/`",
+      "`supabase.from(` in pages (92 sites / 38 files) vs `hooks/api` (29 modules) — data-access placement",
+      "`.update(` / `.insert(` on `providers`, `professionals`, `academies`, `user_roles`, `user_wallets`, `verification_requests` — owner write paths",
+      "`.or(` with template interpolation — 2 sites, both on `filters.q`",
+      "`.limit(` vs `select('*')` — 42 limited reads against 76 unbounded",
+      "`React.lazy`, `Suspense`, `ErrorBoundary`, `componentDidCatch`, `Sentry` — all absent",
+      "`: any` / `as any` — 282 sites outside generated and ui code",
+      "`storage.from(...).upload` — 6 upload sites; bucket, path shape and validation checked",
+      "`image_moderation` readers — none outside the admin hook",
+      "`useSessionTracking()` call sites — none",
+      "`CREATE TABLE` across migrations — 17 tables vs 63 in generated types"
+    ],
+    "notRead": [
+      "44 shadcn/ui components under `src/components/ui/`",
+      "`src/integrations/supabase/types.ts` beyond table/column inventory",
+      "JSX bodies of most discovery and dashboard pages (~70 files) — only their data-access calls were swept",
+      "RLS policies, triggers and functions for the 46 tables whose migrations are not in the repository (`profiles`, `user_roles`, `providers`, `bookings`, `chat_rooms`, `chat_messages`, `reviews`, `notifications`, tracking tables, …)",
+      "`bun.lock`, `bun.lockb` — only `package-lock.json` was audited",
+      "Lovable's hosting layer: build pipeline, CDN headers, CSP, edge-function `verify_jwt` setting"
+    ],
+    "caveats": [
+      "The repository is an export, not a git clone: commit history, branch protection and whether `.env` or secrets were ever committed could not be checked.",
+      "Because three-quarters of the schema has no migration source here, invariants about chat privacy, profile phone-number visibility, review insertion and role self-assignment (F5) could only be marked CHECK. A follow-up with `supabase db dump --schema public` would close that gap in a day and could add or remove findings.",
+      "F1 is `Needs-runtime-check`: the code ships the admin demo login, but whether that account exists in the production auth table is a runtime fact.",
+      "F7's reach for anonymous users depends on the deployed `verify_jwt` setting; the repo's `config.toml` does not disable it, so the finding is scoped to authenticated users.",
+      "`npm audit` reflects the committed `package-lock.json`; if Lovable builds from `bun.lockb`, the resolved versions may differ (see F19)."
+    ]
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "title": "Admin demo login and shared password published on the sign-in page",
+      "ruleId": "SEC-002",
+      "group": "Security",
+      "layer": "Frontend",
+      "dimension": "security",
+      "riskDimension": "Security",
+      "criticality": "High",
+      "priority": "P0",
+      "phase": 1,
+      "gate": "blocks-prod",
+      "confidence": "Needs-runtime-check",
+      "claim": "The sign-in page lists six demo accounts — including `admin@butistri.com` — and signs any visitor into them with the password `Demo@1234`, which is also printed on screen.",
+      "evidence": [
+        {
+          "file": "src/pages/Auth.tsx",
+          "line": 36,
+          "snippet": "const demoAccounts = [ … { email: 'admin@butistri.com', label: 'Admin', role: 'Admin panel' } ]",
+          "note": "Lines 36–42 define the six accounts."
+        },
+        {
+          "file": "src/pages/Auth.tsx",
+          "line": 123,
+          "snippet": "const { error } = await signIn(demoEmail, 'Demo@1234');"
+        },
+        {
+          "file": "src/pages/Auth.tsx",
+          "line": 294,
+          "snippet": "Sample accounts for exploring the app. Password: <code>Demo@1234</code>",
+          "note": "Rendered to every visitor in login mode."
+        }
+      ],
+      "reasoning": "Violates the invariant that privileged credentials are never published. Whether this is an incident depends on one runtime fact: does `admin@butistri.com` exist in the production auth table with that password? If it does, the admin RLS policies (verification review, KYC document read, content moderation) are open to the public. Even if it does not, the pattern trains users to expect a shared password and will be copied into the next environment.",
+      "impact": "Removes a published route to administrator access, protecting owner KYC documents and the verification and moderation queues.",
+      "refutation": "Checked whether the demo section is gated to development builds — it is not (`mode === 'login'` only). Checked whether `signIn` is routed to a separate demo project — it uses the single production client. Survives, conditional on the account existing.",
+      "remediation": "Delete or disable the demo accounts in production immediately and rotate their passwords. Remove the demo block from `Auth.tsx`, or gate it behind `import.meta.env.DEV` with accounts that exist only in a non-production project. Enforce MFA for admin-role users in Supabase Auth.",
+      "effortDays": 1,
+      "role": "Security Engineer",
+      "rationale": "Rule default P0 kept: credentials, public surface, admin blast radius."
+    },
+    {
+      "id": "F2",
+      "title": "Business owners can set their own verified badge, rating and verification status",
+      "ruleId": "BE-010",
+      "group": "Security",
+      "layer": "Database",
+      "dimension": "security",
+      "riskDimension": "Security",
+      "criticality": "High",
+      "priority": "P0",
+      "phase": 1,
+      "gate": "blocks-prod",
+      "confidence": "Confirmed",
+      "instances": 5,
+      "claim": "Owner update policies grant whole-row UPDATE, so the columns that carry the platform's trust signals — `verified`, `rating`, `review_count`, and `verification_requests.status` — are writable by the very user they are meant to constrain.",
+      "evidence": [
+        {
+          "file": "supabase/migrations/20260910035144_5e2276a3-d99a-4904-9271-b2a3757cc738.sql",
+          "line": 48,
+          "snippet": "CREATE POLICY \"Owners update their rental partner\" ON public.rental_providers FOR UPDATE … USING (auth.uid() = owner_id …) WITH CHECK (auth.uid() = owner_id …)",
+          "note": "`rental_providers` has `verified boolean`, `rating numeric`, `review_count integer`; nothing restricts which columns the owner may change."
+        },
+        {
+          "file": "supabase/migrations/20260910065325_594c2d36-e8c8-4613-a93e-3c5128bc3165.sql",
+          "line": 82,
+          "snippet": "CREATE POLICY \"Owners update own pending requests\" … USING (auth.uid() = owner_id AND status IN ('pending','rejected')) WITH CHECK (auth.uid() = owner_id);",
+          "note": "USING gates the old row; WITH CHECK only requires ownership, so the owner may set `status = 'verified'`, `reviewer_id` and `reviewed_at`."
+        },
+        {
+          "file": "src/hooks/api/useVerification.ts",
+          "line": 133,
+          "snippet": "await supabase.from(table).update({ verified: true }).eq('id', request.entity_id);",
+          "note": "The admin approval writes the same column through the same PostgREST path an owner can call."
+        },
+        {
+          "file": "src/pages/dashboard/DashboardProfile.tsx",
+          "line": 114,
+          "snippet": "await supabase.from('providers').update(payload as any).eq('id', provider.id);",
+          "note": "`providers` also carries `verified`, `rating`, `review_count`, `claimed`; its policy is not in the repo but the client relies on the same owner-update shape."
+        }
+      ],
+      "reasoning": "Violates the invariant that the verified badge and ratings are set only by platform processes. For `rental_providers` and `verification_requests` the policy text is in the repository and the attack is one PostgREST PATCH with the owner's own session. For `providers`, `academies` and `professionals` the same client code path is used and the policies are absent from the repo, so they are plausibly identical.",
+      "impact": "Makes the verified badge and star rating mean what customers think they mean, protecting the marketplace's core trust signal.",
+      "refutation": "Looked for a trigger that resets protected columns on owner update — none in the migrations. Looked for a column-level `REVOKE UPDATE (verified, rating, review_count)` — none. Checked whether the badge is rendered from `verification_requests.status` instead of the entity column — it reads the entity's `verified`, so the direct column write is the one that matters. Survives.",
+      "remediation": "Revoke column-level UPDATE on `verified`, `rating`, `review_count`, `claimed` from `authenticated` on all four entity tables, or add a BEFORE UPDATE trigger that resets them unless `has_role(auth.uid(),'admin')`. Move verification decisions into a `decide_verification(request_id, decision, reason)` SECURITY DEFINER function that checks the admin role, updates the request and the entity together, and remove the client-side two-step. Tighten the owner policy's WITH CHECK to `status IN ('pending')`.",
+      "sampleFix": "REVOKE UPDATE ON public.rental_providers FROM authenticated;\nGRANT UPDATE (name, tagline, description, about_long, … /* every column except verified, rating, review_count */)\n  ON public.rental_providers TO authenticated;",
+      "effortDays": 2,
+      "role": "Database Engineer",
+      "rationale": "Escalated from the rule's P1: reachable by any self-registered owner, and it corrupts the platform's primary trust signal."
+    },
+    {
+      "id": "F3",
+      "title": "Loyalty wallet balance and Elite tier are computed in the browser and writable by the user",
+      "ruleId": "DAT-007",
+      "group": "Security",
+      "layer": "Database",
+      "dimension": "security",
+      "riskDimension": "Security",
+      "criticality": "High",
+      "priority": "P0",
+      "phase": 1,
+      "gate": "blocks-prod",
+      "confidence": "Confirmed",
+      "claim": "`user_wallets` grants UPDATE to authenticated users under an own-row policy, and the client reads the balance, adds points and writes the new `balance`, `lifetime_earned` and `tier` back — so any user can set any balance and promote themselves to Elite with one request.",
+      "evidence": [
+        {
+          "file": "supabase/migrations/20260909131221_1e597688-b529-42c9-93ac-a563e08da317.sql",
+          "line": 131,
+          "snippet": "GRANT SELECT, INSERT, UPDATE ON public.user_wallets TO authenticated; … CREATE POLICY \"Own wallet\" … FOR ALL … USING (auth.uid() = user_id)"
+        },
+        {
+          "file": "supabase/migrations/20260909131221_1e597688-b529-42c9-93ac-a563e08da317.sql",
+          "line": 152,
+          "snippet": "CREATE POLICY \"Own wallet earn\" ON public.wallet_transactions FOR INSERT … WITH CHECK (auth.uid() = user_id);",
+          "note": "Any `points` value may be inserted; the ledger does not constrain the balance."
+        },
+        {
+          "file": "src/hooks/api/useWallet.ts",
+          "line": 69,
+          "snippet": "const balance = current.balance + rule.points; … .update({ balance, lifetime_earned: lifetime, tier: becameElite ? 'elite' : 'member', … })",
+          "note": "Lines 67–85: read-modify-write in the client, then a separate ledger insert."
+        }
+      ],
+      "reasoning": "Violates the invariant that loyalty state is derived server-side. Elite unlocks 'members-only rates at partner salons', 'priority slots' and 'unlimited AI try-on' (`src/pages/Elite.tsx`), so a forged tier has a commercial consequence for partners. Secondary defects: the read-modify-write races with itself across tabs, and the ledger insert can fail after the balance update, leaving them inconsistent.",
+      "impact": "Makes credits and Elite status something users earn rather than something they can type, protecting partner pricing commitments.",
+      "refutation": "Looked for a trigger recomputing `balance` from `wallet_transactions` — none. Looked for a CHECK constraint bounding `points` or `balance` — none. Checked whether credits are purely cosmetic — the Elite page promises partner-side perks. Survives.",
+      "remediation": "Revoke UPDATE on `user_wallets` from `authenticated`. Add an `earn_credits(action text)` SECURITY DEFINER function that validates the action against a server-side rule table, inserts the ledger row and updates the wallet atomically with `FOR UPDATE`. Add `CHECK (points > 0 AND points <= 500)` on `wallet_transactions` and derive `tier` in the function.",
+      "sampleFix": "CREATE FUNCTION public.earn_credits(_action text) RETURNS public.user_wallets\nLANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$\nDECLARE pts int; w public.user_wallets;\nBEGIN\n  SELECT points INTO pts FROM public.credit_rules WHERE action = _action;\n  IF pts IS NULL THEN RAISE EXCEPTION 'unknown action'; END IF;\n  INSERT INTO public.wallet_transactions(user_id, action, points) VALUES (auth.uid(), _action, pts);\n  UPDATE public.user_wallets SET balance = balance + pts, lifetime_earned = lifetime_earned + pts,\n    tier = CASE WHEN lifetime_earned + pts >= 2500 THEN 'elite' ELSE tier END\n  WHERE user_id = auth.uid() RETURNING * INTO w;\n  RETURN w;\nEND $$;",
+      "effortDays": 2,
+      "role": "Database Engineer",
+      "rationale": "Escalated from the rule's P1: reachable by every authenticated user and it produces incorrect business output that partners act on."
+    },
+    {
+      "id": "F4",
+      "title": "Booking persists the wrong timestamp and drops every service after the first",
+      "ruleId": "DAT-009",
+      "group": "Data Integrity",
+      "layer": "Database",
+      "dimension": "data",
+      "riskDimension": "Reliability",
+      "criticality": "High",
+      "priority": "P0",
+      "phase": 1,
+      "gate": "blocks-prod",
+      "confidence": "Confirmed",
+      "claim": "The booking flow collects a date, a time slot and multiple services, shows them on the confirmation screen, then saves only the date (as local-midnight converted to UTC) and the first service — so the salon receives a booking for the wrong time, and for Indian users the wrong day.",
+      "evidence": [
+        {
+          "file": "src/components/BookingFlow.tsx",
+          "line": 74,
+          "snippet": "service_id: selectedServices[0] || undefined,\nbooking_date: selectedDate.toISOString(),",
+          "note": "`selectedTime` (line 44) is validated at line 64 and displayed at lines 109 and 237 but never persisted. `toISOString()` on a local-midnight IST date yields 18:30 UTC of the previous day."
+        },
+        {
+          "file": "src/integrations/supabase/types.ts",
+          "line": 502,
+          "snippet": "bookings: { Row: { booking_date: string; … service_id: string | null; … } }",
+          "note": "The schema has one `service_id` and one timestamp; there is no slot column and no booking–services relation."
+        },
+        {
+          "file": "src/components/BookingFlow.tsx",
+          "line": 109,
+          "snippet": "{selectedDate && format(selectedDate, 'EEEE, d MMMM yyyy')} at {selectedTime}",
+          "note": "The customer is told a time that was never saved."
+        }
+      ],
+      "reasoning": "Violates the invariant that a booking persists what the customer confirmed. The provider dashboard (`useProviderBookings`) orders by `booking_date`, so every booking appears at the same meaningless timestamp and the second-and-later services, plus the total price shown to the customer, are lost.",
+      "impact": "Ensures salons see the appointment time and services the customer actually chose, preventing missed appointments and disputes.",
+      "refutation": "Checked whether `notes` carries the slot as a fallback — it carries only free text. Checked for a trigger or view that reconstructs the time — none in the migrations. Survives.",
+      "remediation": "Add `booking_services(booking_id, service_id, price_at_booking)` and store `booking_date` as the combined local date-time in IST (`timestamptz` built from date + slot with the `Asia/Kolkata` zone) or as separate `booking_date date` + `slot time`. Persist the computed total. Write the booking and its services in one `create_booking(...)` function.",
+      "effortDays": 3,
+      "role": "Full-Stack Engineer",
+      "rationale": "Escalated from the rule's P2: this is the platform's core transaction and it is wrong on every booking, reachable by every customer."
+    },
+    {
+      "id": "F5",
+      "title": "Roles are written from the browser; admin exclusion depends on a policy not in the repository",
+      "ruleId": "SEC-005",
+      "group": "Security",
+      "layer": "Database",
+      "dimension": "security",
+      "riskDimension": "Security",
+      "criticality": "High",
+      "priority": "P1",
+      "phase": 1,
+      "gate": "blocks-prod",
+      "confidence": "Needs-runtime-check",
+      "claim": "Onboarding upserts rows into `user_roles` directly from the client; the code filters to self-serve roles, but the same PostgREST call with `role: 'admin'` succeeds unless the table's insert policy — which is not in the repository — excludes it.",
+      "evidence": [
+        {
+          "file": "src/pages/Onboarding.tsx",
+          "line": 103,
+          "snippet": "await supabase.from('user_roles').upsert({ user_id: user.id, role }, { onConflict: 'user_id,role' });",
+          "note": "Client-side allow-list at lines 92–101 is the only filter visible in the repo."
+        },
+        {
+          "file": "supabase/migrations/20260909144554_5a386c91-54c0-4ab0-848f-1227676b0fdf.sql",
+          "line": 20,
+          "snippet": "-- Only self-serve roles may be chosen at signup. 'admin' can never be self-assigned.",
+          "note": "The signup trigger enforces this; the onboarding path bypasses the trigger."
+        },
+        {
+          "file": "src/components/RouteGuard.tsx",
+          "line": 29,
+          "snippet": "const isAdmin = roles.includes('admin');",
+          "note": "Admin routing and every `has_role(…, 'admin')` policy read from the same table."
+        }
+      ],
+      "reasoning": "Violates the invariant that users cannot grant themselves a role, unless the missing policy has a `WITH CHECK (role <> 'admin')` clause. The pattern is dangerous regardless: the security boundary for the entire admin surface is a policy nobody can review from the code.",
+      "impact": "Closes the most direct privilege-escalation path and makes the role boundary reviewable in source control.",
+      "refutation": "Searched all nine migrations for `user_roles` policies — none; the table predates the in-repo history (F8). Could not run against the live project. Recorded as Needs-runtime-check rather than Confirmed.",
+      "remediation": "Run `select * from pg_policies where tablename = 'user_roles'` on the production project now. Then revoke INSERT/UPDATE/DELETE on `user_roles` from `authenticated` and expose `add_self_serve_role(role app_role)` as a SECURITY DEFINER function with the same allow-list the trigger uses.",
+      "effortDays": 1.5,
+      "role": "Database Engineer",
+      "rationale": "Held at P1 rather than P0 because reachability could not be confirmed; the release gate carries it as a condition."
+    },
+    {
+      "id": "F6",
+      "title": "Image moderation is advisory: uploads are public immediately and no reader checks the verdict",
+      "ruleId": "SEC-010",
+      "group": "Security",
+      "layer": "Backend",
+      "dimension": "security",
+      "riskDimension": "Security",
+      "criticality": "Medium",
+      "priority": "P1",
+      "phase": 2,
+      "gate": "warning",
+      "confidence": "Confirmed",
+      "instances": 6,
+      "claim": "Portfolio images are written to a public bucket, appended to the provider's public `portfolio` array, and only then logged to `image_moderation`; nothing in the application reads the moderation status, and four of the six upload paths never submit for moderation at all.",
+      "evidence": [
+        {
+          "file": "src/pages/dashboard/DashboardPortfolio.tsx",
+          "line": 138,
+          "snippet": "const urls = await Promise.all(files.map(uploadFile));\nawait updatePortfolio([...portfolio, ...urls]);\n// Submit each uploaded image for admin moderation",
+          "note": "Public URL is live (line 132 `getPublicUrl`) and on the profile before the queue row exists."
+        },
+        {
+          "file": "src/pages/dashboard/DashboardPortfolio.tsx",
+          "line": 152,
+          "snippet": "toast({ title: 'Images uploaded & sent for approval', description: 'An admin will review your images before they appear publicly.' })",
+          "note": "The message is untrue."
+        },
+        {
+          "file": "src/components/social/PostComposer.tsx",
+          "line": 37,
+          "snippet": "await supabase.storage.from('portfolio').upload(path, file); … getPublicUrl(path)",
+          "note": "Social posts, stylist portfolios, offers and academy covers upload without any moderation row."
+        }
+      ],
+      "reasoning": "A user-generated-content platform in the beauty vertical will receive inappropriate images; the control that is supposed to catch them records them after publication and never gates display. Owner-facing copy promises pre-moderation that does not exist.",
+      "impact": "Makes the moderation queue an actual control, so rejected images stop being served and the promise made to owners becomes true.",
+      "refutation": "Grepped for readers of `image_moderation` outside the admin hook — none. Checked whether the `portfolio` bucket is private with signed URLs — `getPublicUrl` is used throughout. Survives.",
+      "remediation": "Either (a) keep uploads in a private bucket and publish via a function that copies to public storage on approval, or (b) store portfolio entries as rows with `moderation_status` and filter public reads to `approved`. Route all six upload sites through one `useUploadMedia` hook that enqueues moderation. Correct the toast.",
+      "effortDays": 3,
+      "role": "Full-Stack Engineer"
+    },
+    {
+      "id": "F7",
+      "title": "AI generation functions have no per-user quota and draw on one shared credit pool",
+      "ruleId": "API-008",
+      "group": "Backend",
+      "layer": "Backend",
+      "dimension": "scalability",
+      "riskDimension": "Scalability",
+      "criticality": "Medium",
+      "priority": "P1",
+      "phase": 2,
+      "gate": "warning",
+      "confidence": "Confirmed",
+      "claim": "Both edge functions forward any authenticated request straight to the paid Lovable AI gateway with no per-user counting, rate limit or payload size bound, so one account — or one script — can exhaust the platform's AI credits for everyone.",
+      "evidence": [
+        {
+          "file": "supabase/functions/ai-hairstyle/index.ts",
+          "line": 16,
+          "snippet": "const { photo, hairstyle } = await req.json();",
+          "note": "No identity check, no quota lookup, no size limit on the base64 `photo`."
+        },
+        {
+          "file": "supabase/functions/ai-bridal-look/index.ts",
+          "line": 121,
+          "snippet": "if (response.status === 402) { … 'AI credits exhausted. Please try again later.' }",
+          "note": "The function already anticipates the shared pool running dry."
+        },
+        {
+          "file": "src/components/hairstyle/LiveTryOn.tsx",
+          "line": 120,
+          "snippet": "await supabase.functions.invoke('ai-hairstyle', { body: { photo, hairstyle: style } })",
+          "note": "Live camera mode can fire a generation per frame capture."
+        }
+      ],
+      "reasoning": "The Elite page markets 'Unlimited AI Try-On' as a perk, implying non-Elite users are meant to be limited — but nothing limits anyone. Cost exhaustion is a denial of service against the feature and a direct bill.",
+      "impact": "Bounds AI spend per user and keeps the try-on feature available for everyone when one user abuses it.",
+      "refutation": "Checked `supabase/config.toml` for `verify_jwt = false` — absent, so anonymous callers should be rejected by the gateway and the reach is authenticated users. Checked for an in-function counter or KV — none. Survives for authenticated users.",
+      "remediation": "In each function, decode the caller's JWT, count generations per user per day in a small `ai_usage` table (or Upstash-style counter), reject over quota, and cap `photo` at ~4 MB. Enforce the Elite/non-Elite limit there rather than in copy.",
+      "effortDays": 2,
+      "role": "Backend Engineer"
+    },
+    {
+      "id": "F8",
+      "title": "Migration history starts mid-life: 46 of 63 tables and all core policies have no source in the repo",
+      "ruleId": "DAT-004",
+      "group": "Data Integrity",
+      "layer": "Database",
+      "dimension": "data",
+      "riskDimension": "Reliability",
+      "criticality": "High",
+      "priority": "P1",
+      "phase": 1,
+      "gate": "warning",
+      "confidence": "Confirmed",
+      "claim": "The nine migrations create 17 tables; the generated types show 63. `profiles`, `user_roles`, `providers`, `bookings`, `chat_*`, `reviews`, `notifications`, the tracking tables and the `has_role()` / `handle_new_user()` / `notify_*` functions exist only in the hosted project, so the schema cannot be rebuilt, reviewed or restored from source.",
+      "evidence": [
+        {
+          "file": "supabase/migrations/20260909144624_0741f6be-34e5-420f-819b-4b78ad703335.sql",
+          "line": 1,
+          "snippet": "REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM anon, authenticated; … notify_new_booking() … has_role(uuid, public.app_role)",
+          "note": "The first migration that mentions these functions revokes on them; none creates them."
+        },
+        {
+          "file": "supabase/migrations/20260909131221_1e597688-b529-42c9-93ac-a563e08da317.sql",
+          "line": 26,
+          "snippet": "USING (public.has_role(auth.uid(),'admin'))",
+          "note": "The earliest migration already depends on `has_role`, `update_updated_at_column` and `app_role`."
+        },
+        {
+          "file": "src/integrations/supabase/types.ts",
+          "line": 17,
+          "snippet": "academies · academy_batches · … · bookings · chat_messages · chat_rooms · … · profiles · providers · reviews · user_roles",
+          "note": "63 table definitions; 46 have no `CREATE TABLE` anywhere under `supabase/`."
+        }
+      ],
+      "reasoning": "This is why F5 and half the invariants are CHECK rather than HOLDS: the security model of the application is defined in policies nobody can read from the repository. It also means a new environment (F-gap 'Environment separation') cannot be created from source, and disaster recovery depends entirely on the hosted provider.",
+      "impact": "Makes the whole schema and its security policies reviewable, reproducible and restorable from version control.",
+      "refutation": "Checked `.lovable/plan/` and `README.md` for a baseline dump or seed — none. Checked for a `supabase/seed.sql` or `schema.sql` — none. Survives.",
+      "remediation": "Run `supabase db dump --schema public --file supabase/migrations/00000000000000_baseline.sql` (and `--role-only` / storage policies) against production, commit it, and make `supabase db reset` from a clean state part of CI. Review the dumped policies for `user_roles`, `profiles`, `chat_*` and `providers` — expect follow-up findings.",
+      "effortDays": 3,
+      "role": "Database Engineer",
+      "rationale": "Phase 1 because it unblocks F5's verification and the environment-separation gap."
+    },
+    {
+      "id": "F9",
+      "title": "No error boundary anywhere in the component tree",
+      "ruleId": "FE-REACT-003",
+      "group": "Frontend",
+      "layer": "Frontend",
+      "dimension": "maintainability",
+      "riskDimension": "Reliability",
+      "criticality": "High",
+      "priority": "P1",
+      "phase": 1,
+      "gate": "warning",
+      "confidence": "Confirmed",
+      "claim": "A thrown render error in any of the 95 pages unmounts the entire React tree and leaves a blank screen, with no fallback UI and no report.",
+      "evidence": [
+        {
+          "file": "src/App.tsx",
+          "line": 125,
+          "snippet": "const App = () => (\n  <QueryClientProvider client={queryClient}>\n    <AuthProvider>…",
+          "note": "No boundary at the root, the shell, or any route; grep for `ErrorBoundary` / `componentDidCatch` / `getDerivedStateFromError` returns nothing."
+        },
+        {
+          "file": "src/pages/ServiceDetail.tsx",
+          "line": 80,
+          "snippet": "const businessRating = Number((provider as any).rating) || null;",
+          "note": "Representative of ~282 `any`-typed accesses whose failure mode is a runtime throw inside render."
+        }
+      ],
+      "reasoning": "With strict typing off (F13) and data shapes read through `as any`, render-time exceptions are the likely failure mode, and the application has no containment for them.",
+      "impact": "Turns a whole-app blank screen into a contained, reportable failure on one page.",
+      "refutation": "Checked whether `react-router` `errorElement` is used — routes are declared with `<Routes>`/`<Route>`, which does not support it. Survives.",
+      "remediation": "Add a root boundary inside `AppShell` and one per dashboard layout with a retry action; wire `onError` to the error-monitoring gap once it exists.",
+      "effortDays": 1.5,
+      "role": "Frontend Engineer"
+    },
+    {
+      "id": "F10",
+      "title": "No automated tests beyond a placeholder",
+      "ruleId": "MNT-008",
+      "group": "Quality",
+      "layer": "Frontend",
+      "dimension": "maintainability",
+      "riskDimension": "Maintainability",
+      "criticality": "High",
+      "priority": "P1",
+      "phase": 2,
+      "gate": "warning",
+      "confidence": "Confirmed",
+      "claim": "Vitest and Testing Library are configured, but the only test asserts `true === true`; none of the auth, booking, wallet or verification logic is exercised.",
+      "evidence": [
+        {
+          "file": "src/test/example.test.ts",
+          "line": 3,
+          "snippet": "describe(\"example\", () => { it(\"should pass\", () => { expect(true).toBe(true); }); });"
+        },
+        {
+          "file": "vitest.config.ts",
+          "line": 8,
+          "snippet": "include: [\"src/**/*.{test,spec}.{ts,tsx}\"]",
+          "note": "Correctly configured; nothing to run."
+        }
+      ],
+      "reasoning": "Every P0 fix in this report changes behaviour that has no regression protection, and the RLS policies have no policy tests at all.",
+      "impact": "Gives the team a safety net for the remediation work and stops the P0 classes from returning.",
+      "refutation": "Searched for `*.spec.*`, Playwright, Cypress and `pgTAP` — none. Survives.",
+      "remediation": "Start with what the P0s need: unit tests for `BookingFlow` submission shape, `RouteGuard` decisions and the credit rules; policy tests with `pgTAP` or `supabase test db` for owner-cannot-set-verified and user-cannot-write-wallet. Scope to the critical paths, not coverage.",
+      "effortDays": 8,
+      "role": "QA Engineer"
+    },
+    {
+      "id": "F11",
+      "title": "Multi-step business writes are non-atomic client sequences",
+      "ruleId": "DAT-002",
+      "group": "Data Integrity",
+      "layer": "Database",
+      "dimension": "data",
+      "riskDimension": "Reliability",
+      "criticality": "High",
+      "priority": "P1",
+      "phase": 2,
+      "gate": "warning",
+      "confidence": "Confirmed",
+      "instances": 4,
+      "claim": "Four workflows perform two or more dependent writes from the browser with no transaction, so a failure or a closed tab between steps leaves inconsistent data.",
+      "evidence": [
+        {
+          "file": "src/hooks/api/useSocial.ts",
+          "line": 274,
+          "snippet": "await from('communities').insert(community)…; await from('community_members').insert({ community_id: data.id, user_id: community.creator_id, role: 'admin' });",
+          "note": "A community with no admin member if the second insert fails."
+        },
+        {
+          "file": "src/hooks/api/useVerification.ts",
+          "line": 118,
+          "snippet": "update verification_requests … status: decision … then update(table).update({ verified: true })",
+          "note": "Request marked verified while the entity badge is not set."
+        },
+        {
+          "file": "src/hooks/api/useWallet.ts",
+          "line": 74,
+          "snippet": "await supabase.from('user_wallets').update({…}); await supabase.from('wallet_transactions').insert({…});",
+          "note": "Balance changed without a ledger row. Also F3."
+        },
+        {
+          "file": "src/pages/dashboard/DashboardPortfolio.tsx",
+          "line": 138,
+          "snippet": "upload → updatePortfolio → submitForModeration",
+          "note": "Image live with no moderation record. Also F6."
+        }
+      ],
+      "reasoning": "Supabase offers exactly one atomic mechanism to a browser client — a Postgres function — and the codebase uses it once (`find_or_create_academy`). Every other transition is a sequence of PATCH/POST calls.",
+      "impact": "Guarantees that business transitions complete fully or not at all, removing a class of silent data corruption.",
+      "refutation": "Checked for compensating cleanup in `onError` handlers — none. Survives.",
+      "remediation": "Move each sequence into a SECURITY DEFINER function (`create_community`, `decide_verification`, `earn_credits`, `publish_portfolio_image`) and call via `supabase.rpc`. Two of these are already required by F2 and F3.",
+      "effortDays": 3,
+      "role": "Database Engineer"
+    },
+    {
+      "id": "F12",
+      "title": "Unbounded list reads and client-side aggregation over capped windows",
+      "ruleId": "DAT-013",
+      "group": "Backend",
+      "layer": "Backend",
+      "dimension": "scalability",
+      "riskDimension": "Performance",
+      "criticality": "Medium",
+      "priority": "P1",
+      "phase": 2,
+      "gate": "warning",
+      "confidence": "Confirmed",
+      "instances": 34,
+      "claim": "Discovery pages and admin queues issue `select *` with no `limit` or pagination (34 sites of the 76 unbounded reads carry no filter narrower than a city), and admin analytics pulls up to 1,000 raw tracking rows to count them in JavaScript, so results silently truncate and payloads grow with the tables.",
+      "evidence": [
+        {
+          "file": "src/hooks/api/useProviders.ts",
+          "line": 11,
+          "snippet": "let query = supabase.from('providers').select('*').order('created_at', { ascending: false });",
+          "note": "Every provider column, including long `about_long`, `faqs`, `team` JSON, for the whole city."
+        },
+        {
+          "file": "src/hooks/api/useAdminAnalytics.ts",
+          "line": 31,
+          "snippet": "const { data: views } = await supabase.from('profile_view_tracking').select('provider_id').limit(1000); … counts[v.provider_id] = …",
+          "note": "'Most viewed' is computed over the first 1,000 rows in unspecified order, so it becomes wrong once the table passes 1,000 views."
+        },
+        {
+          "file": "src/hooks/api/useImageModeration.ts",
+          "line": 8,
+          "snippet": "supabase.from('image_moderation').select('*').order('created_at', { ascending: false })",
+          "note": "Admin queue with no status filter or page size."
+        }
+      ],
+      "reasoning": "Small today (seeded demo data across 12 cities), but every listing grows linearly with adoption and the analytics are already incorrect by construction above the cap.",
+      "impact": "Keeps listing and dashboard latency flat as the catalogue grows and makes admin analytics correct.",
+      "refutation": "Checked whether PostgREST's server-side `max-rows` is configured — not visible in the repo; Supabase's default is 1,000, which is exactly the silent-truncation behaviour described. Survives.",
+      "remediation": "Select named columns on listing queries; add `.range()` pagination or `useInfiniteQuery`; replace client-side counting with SQL views or `rpc('top_viewed_providers', { limit })` using `GROUP BY`.",
+      "effortDays": 3,
+      "role": "Backend Engineer",
+      "rationale": "Rule default P1 kept but phased to 2: no production symptom yet, and it should follow the schema baseline (F8)."
+    },
+    {
+      "id": "F13",
+      "title": "TypeScript strictness disabled and `any` used at 282 sites",
+      "ruleId": "MNT-009",
+      "group": "Quality",
+      "layer": "Frontend",
+      "dimension": "maintainability",
+      "riskDimension": "Maintainability",
+      "criticality": "Medium",
+      "priority": "P2",
+      "phase": 2,
+      "confidence": "Confirmed",
+      "instances": 282,
+      "claim": "`strict`, `noImplicitAny`, `noUnusedLocals` and the unused-vars lint rule are all off, and writes to the database are routinely cast `as any`, so the generated `Database` types provide no protection where it matters.",
+      "evidence": [
+        {
+          "file": "tsconfig.app.json",
+          "line": 25,
+          "snippet": "\"strict\": false,",
+          "note": "Line 16 `\"noImplicitAny\": false`, lines 17–18 unused checks off."
+        },
+        {
+          "file": "eslint.config.js",
+          "line": 23,
+          "snippet": "\"@typescript-eslint/no-unused-vars\": \"off\","
+        },
+        {
+          "file": "src/hooks/api/useLeads.ts",
+          "line": 24,
+          "snippet": "mutationFn: async (lead: any) => { … supabase.from('leads').insert([lead]) }",
+          "note": "Representative: the insert payload is untyped end to end."
+        },
+        {
+          "file": "src/hooks/useSupabaseQuery.ts",
+          "line": 19,
+          "snippet": "let query = (supabase.from as any)(table).select('*');"
+        }
+      ],
+      "reasoning": "The generated Supabase types are the one contract between UI and schema; casting around them is how F4's missing columns and the `as any` update payloads in F2 went unnoticed.",
+      "impact": "Restores the compile-time contract between the UI and the schema so shape mismatches fail the build rather than the user.",
+      "refutation": "Checked whether Lovable's build runs `tsc` — `vite build` does not type-check. Survives.",
+      "remediation": "Enable `strict` and fix in slices (hooks/api first), add `tsc --noEmit` to the CI gate, replace `as any` writes with `Database['public']['Tables'][T]['Insert']` types, and turn the lint rule back on.",
+      "effortDays": 5,
+      "role": "Frontend Engineer"
+    },
+    {
+      "id": "F14",
+      "title": "Data access split between the hooks layer and 92 inline page queries",
+      "ruleId": "ARC-005",
+      "group": "Architecture",
+      "layer": "Frontend",
+      "dimension": "architecture",
+      "riskDimension": "Maintainability",
+      "criticality": "Medium",
+      "priority": "P2",
+      "phase": 2,
+      "confidence": "Confirmed",
+      "instances": 92,
+      "claim": "A deliberate `hooks/api` layer exists, but 38 page components also call `supabase.from()` directly (92 sites), and the question 'which business does this user own' is answered four different ways, so ownership rules and cache keys drift.",
+      "evidence": [
+        {
+          "file": "src/pages/dashboard/DashboardAnalytics.tsx",
+          "line": 1,
+          "snippet": "10 direct `supabase.from(` calls in one page",
+          "note": "Also DashboardOverview (7), ConsumerSaved (7), Saved (7)."
+        },
+        {
+          "file": "src/pages/dashboard/DashboardProfile.tsx",
+          "line": 26,
+          "snippet": "supabase.from('providers').select('*').eq('owner_id', user!.id).order('created_at').limit(1).maybeSingle()"
+        },
+        {
+          "file": "src/pages/dashboard/DashboardVerification.tsx",
+          "line": 19,
+          "snippet": "const [p, a, pr, r] = await Promise.all([ providers…owner_id, academies…owner_id, professionals…user_id, rental_providers…owner_id ])",
+          "note": "A second, different resolution of 'my entity'; `useConversations.ts` has a third (`ownerColumn` map)."
+        }
+      ],
+      "reasoning": "The inconsistency is a maintainability cost today and a correctness risk when F2/F3/F11 move logic server-side — every inline call site must be found and re-pointed.",
+      "impact": "Gives every write one place to go through, so server-side rules and cache invalidation apply uniformly.",
+      "refutation": "Considered whether the inline calls are all trivial reads — DashboardProfile, DashboardTeam and DashboardPortfolio perform owner updates inline. Survives.",
+      "remediation": "Add a `useMyEntity()` hook as the single owner-resolution point; move page-level queries into `hooks/api`; lint-ban `supabase` imports under `src/pages` with an ESLint `no-restricted-imports` rule.",
+      "effortDays": 5,
+      "role": "Frontend Engineer"
+    },
+    {
+      "id": "F15",
+      "title": "Single bundle: 95 pages imported statically with no route-level code splitting",
+      "ruleId": "FE-007",
+      "group": "Frontend",
+      "layer": "Frontend",
+      "dimension": "scalability",
+      "riskDimension": "Performance",
+      "criticality": "Medium",
+      "priority": "P2",
+      "phase": 2,
+      "confidence": "Confirmed",
+      "claim": "`App.tsx` imports every page, dashboard and admin screen eagerly; the mobile-first landing page therefore downloads recharts, the AI try-on screens, four dashboards and the admin panel before it can render.",
+      "evidence": [
+        {
+          "file": "src/App.tsx",
+          "line": 14,
+          "snippet": "import Index from \"./pages/Index\"; … import StylistSettings from \"./pages/stylist-dashboard/StylistSettings\";",
+          "note": "Lines 14–118: ~95 static page imports; grep for `React.lazy` / `Suspense` returns nothing."
+        }
+      ],
+      "reasoning": "The product is explicitly mobile-first for Indian cities; initial payload is the dominant performance cost for that audience.",
+      "impact": "Cuts first-load size for consumers by deferring dashboard, admin and AI code until it is needed.",
+      "refutation": "Checked `vite.config.ts` for `manualChunks` — none. Survives.",
+      "remediation": "Wrap dashboard, academy, stylist, admin and try-on routes in `React.lazy` with a `Suspense` skeleton; keep discovery routes eager.",
+      "effortDays": 2,
+      "role": "Frontend Engineer"
+    },
+    {
+      "id": "F16",
+      "title": "Admin panel renders hardcoded mock reports and submissions",
+      "ruleId": "MNT-002",
+      "group": "Quality",
+      "layer": "Frontend",
+      "dimension": "maintainability",
+      "riskDimension": "Maintainability",
+      "criticality": "Medium",
+      "priority": "P2",
+      "phase": 2,
+      "confidence": "Confirmed",
+      "claim": "The `/admin` landing page shows static arrays of reports, submissions and stats while the real `issue_reports` table (with an admin policy) receives user reports nobody sees.",
+      "evidence": [
+        {
+          "file": "src/pages/Admin.tsx",
+          "line": 4,
+          "snippet": "const mockReports = [ { id: 1, type: 'Outdated Profile', target: 'Glamour Point Salon', … } ];",
+          "note": "Lines 4–15 mock data; line 21 labels the page '(Demo mode)'."
+        },
+        {
+          "file": "supabase/migrations/20260909131221_1e597688-b529-42c9-93ac-a563e08da317.sql",
+          "line": 174,
+          "snippet": "CREATE POLICY \"Admins manage reports\" ON public.issue_reports FOR ALL …",
+          "note": "The real queue exists and is admin-readable; the UI never queries it."
+        }
+      ],
+      "reasoning": "User safety reports (`ReportIssueDialog`) go into a table with no consumer; the admin sees fabricated rows instead.",
+      "impact": "Lets administrators act on the real safety reports users are already filing.",
+      "refutation": "Grepped for another reader of `issue_reports` — none. Survives.",
+      "remediation": "Replace the mock arrays with `useQuery` over `issue_reports` (filter by status) and remove the static stats or back them with `count: 'exact'` queries.",
+      "effortDays": 2,
+      "role": "Frontend Engineer"
+    },
+    {
+      "id": "F17",
+      "title": "Tracking tables grow without retention, and the session tracker is dead code",
+      "ruleId": "DAT-010",
+      "group": "Data Integrity",
+      "layer": "Database",
+      "dimension": "data",
+      "riskDimension": "Scalability",
+      "criticality": "Medium",
+      "priority": "P2",
+      "phase": 3,
+      "confidence": "Confirmed",
+      "claim": "`search_tracking`, `profile_view_tracking` and `offer_interaction_tracking` receive fire-and-forget inserts from every visitor with no retention, aggregation or index plan, while `useSessionTracking` — the only hook with a session-end write — is never mounted.",
+      "evidence": [
+        {
+          "file": "src/hooks/useTracking.ts",
+          "line": 16,
+          "snippet": "(supabase.from(table as any) as any).insert(data).then(() => {});",
+          "note": "Errors discarded; anonymous callers insert with `user_id: null`."
+        },
+        {
+          "file": "src/hooks/useTracking.ts",
+          "line": 51,
+          "snippet": "export function useSessionTracking() {",
+          "note": "Grep for `useSessionTracking()` finds no caller."
+        }
+      ],
+      "reasoning": "Raw event rows with no rollup are the classic silent-growth table, and F12's admin analytics already read them in full.",
+      "impact": "Keeps analytics tables bounded and the queries over them fast, and removes misleading dead code.",
+      "refutation": "Looked for a `pg_cron` job or retention migration — none in the repo. Survives.",
+      "remediation": "Add a nightly `pg_cron` rollup into daily aggregate tables and delete raw rows older than 90 days; either mount `useSessionTracking` in `AppShell` or delete it.",
+      "effortDays": 2,
+      "role": "Database Engineer"
+    },
+    {
+      "id": "F18",
+      "title": "KYC documents and identifiers retained indefinitely after the decision",
+      "ruleId": "DAT-012",
+      "group": "Data Integrity",
+      "layer": "Database",
+      "dimension": "data",
+      "riskDimension": "Security",
+      "criticality": "Medium",
+      "priority": "P2",
+      "phase": 3,
+      "confidence": "Confirmed",
+      "claim": "Verification collects Aadhaar/PAN/driving-licence images, GST and licence numbers, and keeps them in `verification_requests` and the `verification-docs` bucket forever, with no purge after approval or rejection and no user-initiated deletion.",
+      "evidence": [
+        {
+          "file": "supabase/migrations/20260910065325_594c2d36-e8c8-4613-a93e-3c5128bc3165.sql",
+          "line": 59,
+          "snippet": "CREATE TABLE IF NOT EXISTS public.verification_requests ( … id_proof_url text, gst_number text, licence_number text, …",
+          "note": "No retention columns, no purge trigger."
+        },
+        {
+          "file": "src/pages/dashboard/DashboardVerification.tsx",
+          "line": 172,
+          "snippet": "hint: 'Aadhaar, PAN or driving licence'",
+          "note": "Documents are Indian government identity proofs."
+        },
+        {
+          "file": "src/pages/consumer/ConsumerSettings.tsx",
+          "line": 42,
+          "snippet": "const handleDeleteAccount = () => { toast({ title: 'Contact support', … }) };",
+          "note": "No deletion path for the user either."
+        }
+      ],
+      "reasoning": "Storage is correctly private (positive posture), but India's DPDP Act expects purpose-limited retention of identity documents; the longer they sit, the larger the breach surface behind the admin storage policy that F1 could expose.",
+      "impact": "Limits how much identity data a breach or a compromised admin could reach, and aligns with data-protection obligations.",
+      "refutation": "Checked whether documents are deleted on approval in `useDecideVerification` — they are not. Survives.",
+      "remediation": "Delete storage objects and null the `*_url` columns 30 days after a terminal decision via `pg_cron`; keep only a hash or a 'verified on' record. Wire the account-deletion request to an actual deletion function.",
+      "effortDays": 2,
+      "role": "Database Engineer"
+    },
+    {
+      "id": "F19",
+      "title": "Three competing lockfiles make the build non-reproducible",
+      "ruleId": "DVO-013",
+      "group": "Dependencies",
+      "layer": "Infrastructure",
+      "dimension": "devops",
+      "riskDimension": "Reliability",
+      "criticality": "Low",
+      "priority": "P2",
+      "phase": 3,
+      "confidence": "Confirmed",
+      "claim": "`bun.lock`, `bun.lockb` and `package-lock.json` all sit at the root, so the resolved dependency set depends on which tool the builder happens to use.",
+      "evidence": [
+        {
+          "file": "bun.lock",
+          "line": 1,
+          "note": "164 KB text lockfile."
+        },
+        {
+          "file": "bun.lockb",
+          "line": 1,
+          "note": "245 KB binary lockfile from an older bun."
+        },
+        {
+          "file": "package-lock.json",
+          "line": 1,
+          "note": "238 KB npm lockfile; README instructs `npm i`."
+        }
+      ],
+      "reasoning": "The audit in F22 was run against `package-lock.json`; if Lovable builds with bun, the shipped versions may differ from the audited ones.",
+      "impact": "Makes every build resolve the same dependency tree, so audits and fixes apply to what actually ships.",
+      "refutation": "Checked `package.json` for a `packageManager` field pinning one tool — none. Survives.",
+      "remediation": "Pick one package manager, add `packageManager` to `package.json`, delete the other lockfiles, and have CI fail on lockfile drift.",
+      "effortDays": 0.5,
+      "role": "DevOps Engineer"
+    },
+    {
+      "id": "F20",
+      "title": "Search text interpolated into PostgREST `.or()` filter strings",
+      "ruleId": "DB-001",
+      "group": "Security",
+      "layer": "Frontend",
+      "dimension": "security",
+      "riskDimension": "Security",
+      "criticality": "Low",
+      "priority": "P2",
+      "phase": 3,
+      "confidence": "Confirmed",
+      "claim": "Two rental search hooks build the `.or()` filter by string-interpolating the user's search box, so commas and parentheses in the query alter the filter structure rather than being matched literally.",
+      "evidence": [
+        {
+          "file": "src/hooks/api/useRentals.ts",
+          "line": 51,
+          "snippet": "query.or(`title.ilike.%${filters.q}%,description.ilike.%${filters.q}%,category.ilike.%${filters.q}%`)"
+        },
+        {
+          "file": "src/hooks/api/useRentals.ts",
+          "line": 74,
+          "snippet": "query.or(`name.ilike.%${filters.q}%,description.ilike.%${filters.q}%`)"
+        }
+      ],
+      "reasoning": "Downgraded from the rule's P0 after tracing consequence: RLS still applies, the `status = 'active'` clause is a separate conjunct that an injected OR-term cannot bypass, and both tables are public-read. The residual effect is malformed queries and the ability to add arbitrary read filters over public data.",
+      "impact": "Makes search robust to punctuation and removes an injection pattern before it is copied onto a table where it would matter.",
+      "refutation": "Attempted to construct a filter that escapes the AND with `status=active` — PostgREST parses `.or()` as one grouped clause, so the injected terms stay inside it. Downgraded, not refuted.",
+      "remediation": "Strip `,()` from `q` or switch to `.textSearch()` / an `ilike` on a generated `search_text` column with the pattern passed as a bound value.",
+      "effortDays": 0.5,
+      "role": "Frontend Engineer",
+      "rationale": "De-escalated two levels from the rule default: public-read tables, RLS intact, no write path."
+    },
+    {
+      "id": "F21",
+      "title": "Dead redirect guard and a silent auth-context fallback",
+      "ruleId": "MNT-005",
+      "group": "Quality",
+      "layer": "Frontend",
+      "dimension": "maintainability",
+      "riskDimension": "Maintainability",
+      "criticality": "Low",
+      "priority": "P2",
+      "phase": 3,
+      "confidence": "Confirmed",
+      "claim": "`DashboardLayout` contains a redirect condition that can never be true, and `useAuth()` outside a provider returns a permanently-loading stub instead of throwing, so misconfiguration shows as an infinite skeleton rather than an error.",
+      "evidence": [
+        {
+          "file": "src/components/DashboardLayout.tsx",
+          "line": 29,
+          "snippet": "if (roles.includes('academy') && path.startsWith('/dashboard') && !path.startsWith('/dashboard')) {",
+          "note": "`A && !A` — the academy-to-academy-dashboard redirect never fires."
+        },
+        {
+          "file": "src/contexts/AuthContext.tsx",
+          "line": 160,
+          "snippet": "if (!ctx) { … return { user: null, … isLoading: true, … } as AuthContextType; }",
+          "note": "`RouteGuard` renders a skeleton forever when `isLoading` is stuck true."
+        }
+      ],
+      "reasoning": "Both are small, but both hide failures: the first silently drops a routing rule the author intended, the second converts a programming error into an unexplained hang.",
+      "impact": "Restores the intended academy redirect and makes provider misconfiguration fail loudly in development.",
+      "refutation": "Checked whether the redirect is handled elsewhere — `RouteGuard allowedRoles={['business']}` denies academy users with 'Access Denied' instead of redirecting, so the intent is not met. Survives.",
+      "remediation": "Fix the condition to `!path.startsWith('/academy-dashboard')`; make `useAuth` throw when no provider is mounted.",
+      "effortDays": 0.5,
+      "role": "Frontend Engineer"
+    },
+    {
+      "id": "F22",
+      "title": "20 known vulnerabilities in the committed dependency tree, 15 rated high",
+      "ruleId": "DEP-001",
+      "group": "Dependencies",
+      "layer": "Infrastructure",
+      "dimension": "security",
+      "riskDimension": "Security",
+      "criticality": "High",
+      "priority": "P1",
+      "phase": 1,
+      "gate": "warning",
+      "confidence": "Confirmed",
+      "instances": 20,
+      "claim": "`npm audit` against `package-lock.json` reports 20 advisories (15 high, 4 moderate, 1 low); three are on direct dependencies, and one — `react-router-dom` via `@remix-run/router` — is a runtime client library with an open-redirect XSS advisory.",
+      "evidence": [
+        {
+          "file": "package-lock.json",
+          "line": 1,
+          "note": "`npm audit --package-lock-only`: react-router-dom (high, direct, runtime), vite (high, direct, dev server), postcss (high, direct, build), plus transitive lodash, nanoid, minimatch, brace-expansion, rollup, esbuild, js-yaml, flatted, glob, picomatch, browserslist, yaml, ajv, @humanfs/node, postcss-selector-parser."
+        },
+        {
+          "file": "package.json",
+          "line": 59,
+          "snippet": "\"react-router-dom\": \"^6.30.1\",",
+          "note": "Caret range; the lockfile pins the vulnerable resolution."
+        }
+      ],
+      "reasoning": "Most advisories are build-time tooling and do not reach users, which is why this is P1 rather than the rule's P0. The router advisory does ship to browsers, and with no CI (gap) nothing will notice the next one.",
+      "impact": "Removes a shipped client-side advisory and establishes the habit of a green audit before release.",
+      "refutation": "Separated runtime from build-time packages: vite, esbuild, rollup, postcss, browserslist, glob, minimatch and friends run only at build. `lodash` (via recharts) and `nanoid` may be in the bundle; `react-router-dom` certainly is. Survives at reduced priority.",
+      "remediation": "`npm audit fix`, bump `react-router-dom` and `vite` to patched lines, re-run the audit, and add `npm audit --audit-level=high` to the CI gate. Resolve F19 first so the audit targets the real lockfile.",
+      "effortDays": 1.5,
+      "role": "DevOps Engineer",
+      "rationale": "De-escalated from the rule's P0: the majority of advisories are build-time only and the runtime one requires a crafted URL."
+    }
+  ],
+  "gaps": [
+    {
+      "capability": "Continuous integration with quality gates",
+      "area": "Delivery",
+      "status": "missing",
+      "why": "No pipeline exists, so lint, type-check, tests and the dependency audit never run; every P0 fix in this report can regress silently. Lovable's 'Publish' button is the only deploy path.",
+      "recommendation": "GitHub Actions on push/PR: `npm ci`, `eslint`, `tsc --noEmit`, `vitest run`, `npm audit --audit-level=high`, `supabase db reset` against the baseline migration (after F8). Require the workflow on the default branch.",
+      "priority": "P1",
+      "phase": 1,
+      "effortDays": 3,
+      "role": "DevOps Engineer",
+      "layer": "Infrastructure"
+    },
+    {
+      "capability": "Client error monitoring",
+      "area": "Observability",
+      "status": "missing",
+      "why": "Every failure ends in a toast or a swallowed promise (`useTracking.ts` line 16); a production crash for consumers or a broken admin flow is invisible to the team.",
+      "recommendation": "Sentry (or equivalent) with source maps, wired to the error boundary from F9, `QueryCache.onError` and the edge functions' `catch` blocks.",
+      "priority": "P1",
+      "phase": 1,
+      "effortDays": 1.5,
+      "role": "Frontend Engineer",
+      "layer": "Frontend"
+    },
+    {
+      "capability": "Environment separation",
+      "area": "Infrastructure",
+      "status": "missing",
+      "why": "`supabase/config.toml` and `.env` name one project; Lovable previews, demo accounts and production data share a database, which is how demo admin logins (F1) end up in production.",
+      "recommendation": "A second Supabase project (or Supabase Branching) for preview/staging, seeded from the baseline migration; per-environment `.env` files; demo accounts only in staging.",
+      "priority": "P1",
+      "phase": 2,
+      "effortDays": 3,
+      "role": "DevOps Engineer",
+      "layer": "Infrastructure"
+    },
+    {
+      "capability": "Booking availability model",
+      "area": "Product integrity",
+      "status": "missing",
+      "why": "Time slots are a hardcoded array (`BookingFlow.tsx` lines 30–36); there are no provider hours, no capacity, no conflict check, so two customers can book the same slot and nothing tells either of them.",
+      "recommendation": "Provider opening hours and slot capacity tables, an exclusion constraint or `create_booking` function that rejects overlapping confirmed bookings, and slot availability fetched from the server.",
+      "priority": "P1",
+      "phase": 2,
+      "effortDays": 5,
+      "role": "Full-Stack Engineer",
+      "layer": "Database"
+    },
+    {
+      "capability": "Backup and restore verification",
+      "area": "Resilience",
+      "status": "partial",
+      "why": "Supabase provides managed backups on paid tiers, but nothing in the repo records the plan tier, the retention window or a tested restore — and with F8 the schema cannot be rebuilt from source either.",
+      "recommendation": "Confirm the project tier and PITR setting, document the RPO/RTO, and perform one restore into the staging project as a drill.",
+      "priority": "P1",
+      "phase": 2,
+      "effortDays": 1,
+      "role": "DevOps Engineer",
+      "layer": "Infrastructure"
+    },
+    {
+      "capability": "Abuse protection on anonymous writes",
+      "area": "Security",
+      "status": "missing",
+      "why": "`enquiries`, `issue_reports` and the three tracking tables accept anonymous inserts with no CAPTCHA, rate limit or size cap, so the business lead inbox and analytics can be flooded by a script.",
+      "recommendation": "Cloudflare Turnstile on the enquiry and report forms, verified in an edge function that performs the insert; PostgREST size limits; per-IP rate limiting at the Supabase API gateway.",
+      "priority": "P2",
+      "phase": 2,
+      "effortDays": 2,
+      "role": "Backend Engineer",
+      "layer": "Backend"
+    },
+    {
+      "capability": "Content Security Policy",
+      "area": "Security",
+      "status": "missing",
+      "why": "The Supabase session lives in `localStorage` by design; with no HTML sinks found the XSS risk is low today, but a CSP is the control that keeps a future one from becoming session theft.",
+      "recommendation": "A CSP meta tag (or Lovable/hosting header) allowing self, the Supabase project origin and the AI gateway; start in report-only mode.",
+      "priority": "P2",
+      "phase": 2,
+      "effortDays": 1,
+      "role": "Frontend Engineer",
+      "layer": "Frontend"
+    },
+    {
+      "capability": "Account and data deletion",
+      "area": "Privacy",
+      "status": "missing",
+      "why": "'Delete account' shows a toast saying to contact support; there is no function to remove a user's profile, chat, bookings, KYC documents and wallet, which the DPDP Act and app-store policies both expect.",
+      "recommendation": "A `delete_my_account()` SECURITY DEFINER function cascading through user-owned tables and storage folders, invoked from settings after re-authentication.",
+      "priority": "P2",
+      "phase": 2,
+      "effortDays": 2,
+      "role": "Backend Engineer",
+      "layer": "Database"
+    }
+  ],
+  "refutedCandidates": [
+    {
+      "claim": "The Supabase publishable key committed in `.env` is a leaked secret.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "`sb_publishable_…` keys are designed to ship in browser bundles; RLS is the authorisation control. Committing `.env` is a hygiene issue (it is not in `.gitignore`) and is listed under suggestions, not findings."
+    },
+    {
+      "claim": "`LOVABLE_API_KEY` or a service-role key reaches the client.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "Swept `src/` for `service_role`, `secret`, `api_key`: only the publishable key and the header-rewriting helper. The AI key is read from `Deno.env` inside the functions."
+    },
+    {
+      "claim": "`ai-bridal-look` is vulnerable to SSRF through `toDataUrl(imageUrl)`.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "The fetched URL is the AI gateway's response image, not the caller's `photo`; user input is only forwarded as an `image_url` to the gateway."
+    },
+    {
+      "claim": "PostgREST filter injection in rental search is a P0 injection.",
+      "verdict": "Downgraded",
+      "step": 4,
+      "reasoning": "Traced consequence: RLS intact, `status = 'active'` is a separate conjunct, both tables public-read. Kept as F20 at Low."
+    },
+    {
+      "claim": "Session token in `localStorage` is a P0 (SEC-003).",
+      "verdict": "Downgraded",
+      "step": 3,
+      "reasoning": "It is the Supabase-js default and zero HTML injection sinks exist in the app code, so no in-origin script vector was found. Recorded as the CSP gap rather than a finding."
+    },
+    {
+      "claim": "Admin pages are protected only by the client-side `RouteGuard`.",
+      "verdict": "Refuted",
+      "step": 3,
+      "reasoning": "Every admin-managed table in the repository (`products`, `enquiries`, `issue_reports`, `verification_requests`, `rental_*`, `business_*`) carries a `has_role(auth.uid(),'admin')` policy; `has_role` is SECURITY DEFINER with EXECUTE revoked from anon and PUBLIC. The UI guard is cosmetic by design."
+    },
+    {
+      "claim": "Anonymous visitors can call the AI functions and drain credits.",
+      "verdict": "Refuted",
+      "step": 3,
+      "reasoning": "`supabase/config.toml` does not set `verify_jwt = false`, so the gateway's default JWT check applies, and the custom fetch strips the publishable key from `Authorization`, so unauthenticated calls carry no bearer. Anonymous reach is unconfirmed; F7 is scoped to authenticated users."
+    },
+    {
+      "claim": "Verification documents are publicly readable.",
+      "verdict": "Refuted",
+      "step": 3,
+      "reasoning": "Storage policies restrict `verification-docs` to the owner's `auth.uid()` folder plus admin SELECT, and the client only ever creates 300-second signed URLs. Recorded as positive posture."
+    },
+    {
+      "claim": "A user can sign up as admin by setting `signup_role` metadata.",
+      "verdict": "Refuted",
+      "step": 3,
+      "reasoning": "`handle_new_user()` maps the requested role through an explicit allow-list and falls back to `consumer`; admin is excluded. The onboarding path is the remaining question (F5)."
+    },
+    {
+      "claim": "Chat rooms and profile phone numbers are readable across users.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "The `.or()` participant filters interpolate the session user's own id, not attacker input. The `chat_rooms`, `chat_messages` and `profiles` policies are not in the repo, so this could not be confirmed either way and is recorded as a coverage caveat rather than a finding."
+    },
+    {
+      "claim": "Credits can be farmed by spamming try-on or mood-board actions.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "Only `Enquiry.tsx` calls `useEarnCredits`; the other rules in `CREDIT_RULES` have no callers. Moot given F3, which allows writing the balance directly."
+    },
+    {
+      "claim": "The edge functions' `Access-Control-Allow-Origin: *` is a defect.",
+      "verdict": "Refuted",
+      "step": 3,
+      "reasoning": "With JWT verification on, the wildcard origin does not grant anything a caller's bearer token does not already grant; it is the standard Supabase function template."
+    }
+  ],
+  "positivePosture": [
+    {
+      "title": "Row-level security on every table the repository defines",
+      "detail": "All 17 in-repo tables enable RLS with explicit per-role GRANTs (anon, authenticated, service_role) and separate SELECT/INSERT/UPDATE/DELETE policies — including correct `WITH CHECK` on inserts and public-read/owner-write splits on profile blocks."
+    },
+    {
+      "title": "Sound role model in design",
+      "detail": "Roles live in a separate `user_roles` table with an enum; `has_role()` is SECURITY DEFINER with EXECUTE revoked from anon and PUBLIC; the signup trigger allow-lists self-serve roles and can never assign admin."
+    },
+    {
+      "title": "Private KYC document storage done properly",
+      "detail": "The `verification-docs` bucket is scoped to `(storage.foldername(name))[1] = auth.uid()` for all four verbs, admins get SELECT only, and the client issues 300-second signed URLs rather than public links."
+    },
+    {
+      "title": "Careful cron authentication helper",
+      "detail": "`_shared/cron-auth.ts` compares SHA-256 digests with `timingSafeEqual`, supports secret rotation via a previous secret, and fails closed when the secret is unset."
+    },
+    {
+      "title": "Nothing privileged in the bundle, no HTML injection sinks",
+      "detail": "Only the publishable key ships; zero `dangerouslySetInnerHTML`, `innerHTML` or `eval` outside shadcn/ui. The preview auth broker validates editor origins before posting a session."
+    },
+    {
+      "title": "Consistent server-state handling",
+      "detail": "Every `hooks/api` module uses TanStack Query with keyed caches and `invalidateQueries` on mutation; realtime channels are removed on unmount; the typed `Database` client is generated from the schema."
+    },
+    {
+      "title": "One correct server-side function to copy",
+      "detail": "`find_or_create_academy` is SECURITY DEFINER, sets `search_path`, checks `auth.uid()`, validates input, handles slug collisions, and has EXECUTE granted only to `authenticated`. It is the template every fix in F2, F3 and F11 should follow."
+    },
+    {
+      "title": "Newer tables are well modelled",
+      "detail": "Rentals, profile blocks, alumni and verification tables carry foreign keys with cascades, `updated_at` triggers, unique constraints and indexes matching the filter columns the hooks use."
+    }
+  ],
+  "inventory": [
+    {
+      "item": "Source",
+      "value": "≈31,300 lines · 256 TS/TSX/SQL files (≈24,000 lines application code)"
+    },
+    {
+      "item": "Pages / components / API hooks",
+      "value": "95 · 46 · 29"
+    },
+    {
+      "item": "Database",
+      "value": "63 tables in generated types · 17 defined by 9 in-repo migrations · 2 RPC functions"
+    },
+    {
+      "item": "Edge functions",
+      "value": "2 (Deno) + shared cron-auth helper"
+    },
+    {
+      "item": "Direct dependencies",
+      "value": "52 runtime · 20 dev · 20 audit advisories (15 high)"
+    },
+    {
+      "item": "Tests",
+      "value": "1 placeholder"
+    },
+    {
+      "item": "CI / IaC",
+      "value": "None · `supabase/config.toml` holds only a project id"
+    },
+    {
+      "item": "Environments",
+      "value": "One Supabase project for preview and production"
+    }
+  ],
+  "releaseGates": [
+    {
+      "gate": "Published or shared privileged credentials",
+      "findingRefs": [
+        "F1"
+      ],
+      "devTest": "Warning",
+      "prod": "Blocks",
+      "status": "Needs-runtime-check"
+    },
+    {
+      "gate": "Broken authorisation on trust and loyalty data",
+      "findingRefs": [
+        "F2",
+        "F3"
+      ],
+      "devTest": "Warning",
+      "prod": "Blocks",
+      "status": "Open"
+    },
+    {
+      "gate": "Core transaction correctness (booking)",
+      "findingRefs": [
+        "F4"
+      ],
+      "devTest": "Warning",
+      "prod": "Blocks",
+      "status": "Open"
+    },
+    {
+      "gate": "Privilege escalation via role self-assignment",
+      "findingRefs": [
+        "F5"
+      ],
+      "devTest": "Warning",
+      "prod": "Blocks",
+      "status": "Needs-runtime-check"
+    },
+    {
+      "gate": "Secrets in source",
+      "note": "none found — publishable key only",
+      "devTest": "Clear",
+      "prod": "Clear",
+      "status": "Pass"
+    },
+    {
+      "gate": "Injection",
+      "findingRefs": [
+        "F20"
+      ],
+      "devTest": "Clear",
+      "prod": "Clear",
+      "status": "Pass"
+    },
+    {
+      "gate": "Known vulnerable dependencies",
+      "findingRefs": [
+        "F22"
+      ],
+      "devTest": "Clear",
+      "prod": "Warning",
+      "status": "Open"
+    },
+    {
+      "gate": "Schema reproducible from source",
+      "findingRefs": [
+        "F8"
+      ],
+      "devTest": "Clear",
+      "prod": "Warning",
+      "status": "Open"
+    },
+    {
+      "gate": "Content moderation effective",
+      "findingRefs": [
+        "F6"
+      ],
+      "devTest": "Clear",
+      "prod": "Warning",
+      "status": "Open"
+    },
+    {
+      "gate": "CI quality gate",
+      "note": "no pipeline exists — see gaps",
+      "devTest": "Warning",
+      "prod": "Warning",
+      "status": "Open"
+    }
+  ],
+  "phases": [
+    {
+      "number": 1,
+      "name": "Stabilisation & Risk Mitigation",
+      "objective": "Remove the published admin login, take the trust columns and the wallet out of the owner's hands, make bookings persist what was confirmed, commit the schema baseline, and stand up the minimum CI and error monitoring needed to keep those fixes fixed."
+    },
+    {
+      "number": 2,
+      "name": "Architecture & Scalability",
+      "objective": "Move the remaining multi-step transitions into Postgres functions, make moderation and AI quotas real controls, paginate and type the data layer, separate environments, and give bookings an availability model."
+    },
+    {
+      "number": 3,
+      "name": "Optimisation & Governance",
+      "objective": "Retention for tracking and KYC data, lockfile and search hygiene, and small correctness clean-ups."
+    }
+  ],
+  "suggestions": [
+    {
+      "suggestion": "Add `.env` to `.gitignore` and commit `.env.example` instead",
+      "description": "The file only holds the publishable key today, but the same file will be where the first real secret lands.",
+      "impact": "Prevents the most common way a server key ends up in a public repo."
+    },
+    {
+      "suggestion": "Replace the Lovable placeholder README",
+      "description": "`README.md` still says `REPLACE_WITH_PROJECT_ID` and describes editing through Lovable; it should describe the Supabase project, the migration workflow and how to run tests.",
+      "impact": "Cuts onboarding time and records the operational knowledge that currently exists only in the hosted dashboard."
+    },
+    {
+      "suggestion": "Use `zod` — it is already installed",
+      "description": "Every form writes raw `useState` objects to the database. `zod` schemas on the enquiry, booking, profile and verification forms would catch bad phone numbers, dates and empty fields before PostgREST does.",
+      "impact": "Cleaner data in `enquiries` and `profiles`, fewer support tickets from malformed bookings."
+    },
+    {
+      "suggestion": "Reconcile the Lovable plan with the migrations",
+      "description": "The plan says the Shop module and its `products`/`cart_items` tables were removed; the first migration still creates them and the generated types still carry them.",
+      "impact": "Removes dead schema and an admin-managed table nobody uses."
+    }
+  ],
+  "architecturalRecommendations": [
+    {
+      "aspect": "Where business rules run",
+      "current": "In page components and hooks: wallet maths, verification approval, booking assembly, community creation — all as client-side write sequences.",
+      "recommended": "Postgres SECURITY DEFINER functions for every state transition, called via `supabase.rpc`; tables receive plain CRUD only for owner-editable content fields.",
+      "recommendation": "Copy the `find_or_create_academy` pattern: check `auth.uid()`, validate, write atomically, grant EXECUTE to `authenticated` only."
+    },
+    {
+      "aspect": "Write control on trust columns",
+      "current": "Whole-row owner UPDATE policies on every entity table.",
+      "recommended": "Column-level GRANTs (or a protective trigger) so `verified`, `rating`, `review_count`, `claimed`, wallet `balance`/`tier` and verification `status` are writable only through admin or function paths.",
+      "recommendation": "Apply to `providers`, `academies`, `professionals`, `rental_providers`, `user_wallets`, `verification_requests` in one migration."
+    },
+    {
+      "aspect": "Data access in the client",
+      "current": "`hooks/api` for some tables; 92 inline `supabase.from` calls across 38 pages; four different owner-resolution queries.",
+      "recommended": "All Supabase access through `hooks/api`, one `useMyEntity()` hook, and an ESLint restriction on importing the client under `src/pages`.",
+      "recommendation": "Do this alongside F2/F3/F11 so every re-pointed write site is touched once."
+    },
+    {
+      "aspect": "Schema ownership",
+      "current": "Nine migrations from September 2026; 46 tables and all core policies exist only in the hosted project.",
+      "recommended": "A committed baseline dump followed by forward-only migrations, with `supabase db reset` in CI proving the repo can rebuild the database.",
+      "recommendation": "This is the prerequisite for a staging environment and for reviewing the policies that F5 depends on."
+    },
+    {
+      "aspect": "Delivery",
+      "current": "Lovable 'Publish' from the editor; no pipeline, one environment, three lockfiles.",
+      "recommended": "GitHub-hosted repo with a CI workflow (lint, `tsc`, tests, audit, migration reset), a staging Supabase project, one package manager, and production deploys from the default branch.",
+      "recommendation": "Keep Lovable as an editing tool if desired, but make the pipeline the gate."
+    },
+    {
+      "aspect": "Bundle shape",
+      "current": "One chunk containing all 95 pages including dashboards, admin and AI try-on.",
+      "recommended": "Eager discovery routes; lazy dashboard, admin, academy, stylist and try-on route groups.",
+      "recommendation": "Two days of work with an outsized effect on the mobile-first audience."
+    }
+  ],
+  "architecturalNarrative": "Butistri follows the canonical Lovable/Supabase shape: a React single-page application speaks PostgREST directly, and Postgres row-level security is the only server-side authorisation. That shape is legitimate — many production applications run this way — but it carries one non-negotiable rule: anything a user must not be able to do to their own row has to be enforced in the database, because the browser is the attacker's machine. This codebase honours the rule for read visibility and for admin-only tables, and breaks it for the transitions that define the product. Owners update whole rows including their verified badge and rating; users update their own wallet; the booking is assembled client-side from a hardcoded slot list and loses the slot on the way to the table. The single RPC function in the repository, `find_or_create_academy`, shows the team already knows the correct pattern; the remediation is to apply it consistently rather than to change platforms.\n\nThe second structural issue is that the repository does not own its schema. Migrations begin on 9 September 2026 and reference tables, functions and policies that were created earlier through the hosted editor. Until a baseline is committed, the security model cannot be reviewed from source, a second environment cannot be created, and the two most important open questions in this report — whether the demo admin exists and whether users can insert an admin role — remain runtime checks rather than code facts.\n\nEverything else is conventional early-stage debt: no CI, a placeholder test, strict typing off, a single bundle, no error reporting. None of it is unusual for a product at this stage, and all of it is cheap relative to the cost of shipping the P0s unfixed.",
+  "lookingAhead": "The four P0 findings share one fix pattern and together cost about eight man-days; with the schema baseline and a minimal pipeline, Phase 1 lands in roughly four engineer-weeks. After that the platform's strengths — a coherent role model, private document handling, typed data access — become the foundation rather than the exception. We would be glad to re-run the policy review against the committed baseline once it exists, which is the single step most likely to change the picture in this report.",
+  "executionNotes": [
+    {
+      "date": "2026-09-13",
+      "title": "Platform decision: NestJS API on PostgreSQL replaces direct browser-to-Supabase access",
+      "text": "After the review, Butistri decided to move to a NestJS (Fastify adapter) API with Prisma on PostgreSQL, BullMQ on Redis for background work, Cloudflare R2 for files and API-issued sessions, hosted on one Indian-region VPS at launch. The migration is sized at 6–10 engineer-weeks and starts with the schema dump (F8). Postgres is kept, so every database-side fix below (functions, column grants, constraints) carries over unchanged into the new stack.",
+      "reference": "architecture-review/PLATFORM-PLAN-butistri.md"
+    },
+    {
+      "date": "2026-09-13",
+      "title": "Phase 1 is still done now, in the current Supabase stack",
+      "text": "The migration is weeks away and Phase 1 holds live risks, so do not wait for it. Fix F1, F2, F3, F4, F5, F8, F9 and F22 and stand up CI and error monitoring in the existing codebase exactly as written. The database-side changes for F2, F3 and F4 (revoked column updates, SECURITY DEFINER functions, the booking_services table) are the same objects the NestJS services will call, so nothing is thrown away. F8 is also step 1 of the migration.",
+      "findingRefs": [
+        "F1",
+        "F2",
+        "F3",
+        "F4",
+        "F5",
+        "F8",
+        "F9",
+        "F22"
+      ]
+    },
+    {
+      "date": "2026-09-13",
+      "title": "Phase 2 items fold into the migration rather than being fixed twice",
+      "text": "Implement these in the new API modules instead of patching the Supabase client code: F6 in the media module (private uploads, publish on approval), F7 in the ai module (BullMQ job with per-user quota), F11 as service-level transactions, F12 in catalog and admin (server-side pagination and SQL aggregation), F13 by starting the new codebase with strict TypeScript and the generated OpenAPI client, F14 by repointing hooks to that client, F16 in the admin module. The environment-separation, CSP, abuse-protection and account-deletion gaps land in the API as well. For F10, build the test harness in the new API (Jest, Supertest, Testcontainers); in the current codebase add only the policy tests that protect Phase 1.",
+      "findingRefs": [
+        "F6",
+        "F7",
+        "F10",
+        "F11",
+        "F12",
+        "F13",
+        "F14",
+        "F16"
+      ]
+    },
+    {
+      "date": "2026-09-13",
+      "title": "Phase 3 items move to the new stack or become moot",
+      "text": "F17 and F18 become BullMQ scheduled jobs in the new API. F19 disappears with the new repository, which must commit exactly one lockfile from day one. F20 is fixed in the catalog module by passing search input as a bound parameter. F21 is a five-minute fix — do it now, it will be carried by the frontend into the new stack.",
+      "findingRefs": [
+        "F17",
+        "F18",
+        "F19",
+        "F20",
+        "F21"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,514 @@
+{
+  "meta": {
+    "app": "novello-client-crm",
+    "productName": "Novello CRM",
+    "client": "Novello Healthcare",
+    "org": "Novello",
+    "repository": "gitlab.com/appollo79/client-crm",
+    "repoPath": "D:/repos/novello/client-crm",
+    "branch": "Alpha/0.0.0.2",
+    "commit": "1aa70c5f",
+    "stack": "React 17 / TypeScript 4.6 · Create React App (react-scripts 5.0.0) · Redux Toolkit · Ant Design 4 · Axios · GitLab CI / Docker",
+    "reviewDate": "2026-10-30",
+    "assessmentType": "Technical Landscape Assessment & Recommendations Report — Refresh",
+    "documentStatus": "CONFIDENTIAL",
+    "scope": "Refresh of the 2026-07-29 assessment, re-reviewing the internal CRM single-page application at branch `Alpha/0.0.0.2` (commit 1aa70c5f) after 129 commits and +17,267/−1,239 lines across 306 files. All seven baseline findings and all three capability gaps were re-verified against current code. The new CRM permissions management surface added this cycle was reviewed specifically, because the companion `novello-server` report establishes that the API does not enforce the permissions this application manages. Backend behaviour is assessed in `novello-server` and `novello-database`; this report covers the browser application only."
+  },
+
+  "verdict": {
+    "prod": "BLOCK_RELEASE",
+    "devTest": "APPROVE_WITH_CONDITIONS",
+    "summary": "Production remains blocked on the same two findings as in July, both unchanged. The access token is still written to `localStorage`, where any script running on the page can read it, and server-supplied rich text is still rendered through `dangerouslySetInnerHTML` with no sanitiser anywhere in the dependency tree — so a stored payload entered through any authoring surface executes in an administrator's session and can read that token. The pair is the finding: the injection path and the credential store reinforce each other. This cycle added a CRM permissions management screen, and the review found that the permission model it manages is enforced only in this application — the companion server report confirms the API ignores it — which makes the browser the sole access control for a feature presented to administrators as one. Test coverage has improved from 15 files to 26 and one long-running import now cancels properly, but nothing in the delivery pipeline can fail a bad change.",
+    "blockers": [
+      { "text": "Move the access token out of `localStorage` to a storage the page cannot read, or accept the risk explicitly and remove the injection path first.", "findingId": "C1" },
+      { "text": "Sanitise all server-supplied HTML before rendering, at both `dangerouslySetInnerHTML` sites.", "findingId": "C2" },
+      { "text": "Make the pipeline capable of failing: run tests and lint as blocking jobs rather than an advisory Sonar scan.", "findingId": "C3" }
+    ]
+  },
+
+  "objective": {
+    "narrative": "To re-establish the state of the Novello CRM three months after the initial assessment, verifying which findings have been closed and reviewing the substantial new surface added since — notably the CRM user permissions management screens. The engagement re-tested all seven baseline findings and all three capability gaps against current code, and checked how this application's permission enforcement relates to the server's, since the two were built in the same cycle.",
+    "metrics": [
+      { "value": "129", "label": "Commits Since Review", "detail": "+17,267 / −1,239 lines across 306 files" },
+      { "value": "8", "label": "Findings", "detail": "P0=2  P1=5  P2=1" },
+      { "value": "0 of 7", "label": "Baseline Findings Fixed", "detail": "two partially improved, none closed" },
+      { "value": "50", "label": "Est. Total Effort", "detail": "Man-days across all three phases" }
+    ]
+  },
+
+  "executiveSummary": "The CRM has grown by 17,000 lines across 306 files in three months, and none of the seven findings from July has been closed. Two of them block release and both are unchanged in the same files and on the same lines. The access token is written to `localStorage` through a generic storage service, alongside the cached user object; `localStorage` is readable by any JavaScript executing on the origin, so the token's confidentiality depends entirely on no script ever being injected. That assumption is not safe here, because the second finding is an injection path: two components render server-supplied strings through `dangerouslySetInnerHTML`, and a search of the dependency tree finds no sanitiser — no DOMPurify, no sanitize-html, nothing. Notification content authored in the CRM and rich text arriving from the API are both rendered as markup. A payload stored through any authoring surface therefore executes in the next administrator's session, where it can read the token from `localStorage` and use it against an API that, per the companion server report, accepts that token on 65 role-unrestricted endpoints.\n\nThe third blocker is why the first two survived a cycle of this size. The pipeline has a `test` stage containing exactly one job — a Sonar scan marked `allow_failure: true` — and no job runs the test suite or the linter. So nothing in delivery can reject a change, and the 26 test files that now exist, up from 15, are run only by whoever remembers to run them.\n\nThe notable new finding concerns the permissions feature added this cycle. The CRM gained a full management surface — a permissions form with per-page and per-action toggles, bulk row and column operations, and a management modal — and `PrivateRoute` carries a comment explaining that page access is now decided by a `PermissionGate` inside the main layout. That is a clear, deliberate design. The problem is that it is the only enforcement that exists: the companion server report establishes that the server's `CheckCrmPermission` use-case is called from nowhere outside its own module. A CRM user whose access to invoices or payment history has been withheld sees the page hidden and can still call the endpoint directly with their own token. The feature is presented to administrators as an access control and functions as a navigation preference.\n\nThe remaining findings are unchanged in substance. Server state still lives in Redux Toolkit with no caching or request deduplication library, so the same data is refetched on every mount and shared across screens by hand. In-flight requests are still not cancelled on unmount, with one exception added this cycle — a long-running shift import now uses an `AbortController` correctly, which is the pattern the rest of the application needs. And the toolchain is where it was: React 17 with React 19 current, Ant Design 4 with 5 released, TypeScript 4.6, and `react-scripts` 5.0.0 — Create React App, which is no longer maintained and is the constraint underneath several of the others. There is still no Content Security Policy and still no client error or performance monitoring, which is why neither P0 would be detected if it were exploited.",
+
+  "scorecard": {
+    "targetLabel": "target 3.5 avg",
+    "narrative": "Only maintainability moves, from 2.0 to 2.5, on the strength of test files growing from 15 to 26 — capped there because nothing runs them and 306 files changed in the same period. Security stays at 1.5: both P0s survive untouched and the new client-side-only permission enforcement adds to them. Observability stays at 1.0, since there is still no error reporting of any kind in the browser — the server has Sentry and this application has nothing. DevOps stays at 2.0 because the pipeline is unchanged and still cannot fail. Scalability holds at 2.5: one deliberate `AbortController` adoption is real but does not change the Redux-for-server-state picture.",
+    "dimensions": [
+      { "id": "architecture", "label": "Architecture Quality", "current": 3.0, "target": 3.5, "maturity": "Defined", "keyGap": "Module structure is consistent and the new permissions feature is cleanly organised, but server state is modelled as Redux slices rather than cached queries (C6), which spreads fetch orchestration across components instead of containing it." },
+      { "id": "security", "label": "Security Posture", "current": 1.5, "target": 4.0, "maturity": "Initial", "keyGap": "The access token is in `localStorage` (C1) and server-supplied HTML is rendered unsanitised (C2) — the two compose into session theft. The permission model this application manages is enforced only here, not by the API (C8), and there is no CSP to limit what an injected script could do (G1)." },
+      { "id": "scalability", "label": "Scalability Readiness", "current": 2.5, "target": 3.5, "maturity": "Developing", "keyGap": "Server state in Redux with no caching or deduplication means repeated refetches of the same data (C6), and requests are still not cancelled on unmount outside one import modal (C5)." },
+      { "id": "maintainability", "label": "Code Maintainability", "current": 2.5, "target": 3.5, "maturity": "Developing", "keyGap": "Test files grew from 15 to 26, but against 306 changed files that is thin, nothing in CI runs them (C3), and the toolchain sits on an unmaintained Create React App build (C7)." },
+      { "id": "observability", "label": "Observability & Monitoring", "current": 1.0, "target": 3.0, "maturity": "Initial", "keyGap": "No client error reporting, no performance monitoring and no release tracking (C4, G2) — so a JavaScript exception, or either P0 being exploited, is visible only if a user reports it." },
+      { "id": "devops", "label": "DevOps Maturity", "current": 2.0, "target": 3.5, "maturity": "Developing", "keyGap": "The build and deploy stages work, but the `test` stage holds a single `allow_failure` Sonar job and no test, lint or audit gate exists (C3), so no change can be rejected by the pipeline." }
+    ]
+  },
+
+  "systemModel": {
+    "purpose": "The internal CRM used by Novello staff to run the staffing operation: managing candidates and their compliance evidence, client organisations, sites and departments, shifts and offers, timesheets and their AI-assisted review, rate cards, invoices, umbrella arrangements, WhatsApp conversations and — new this cycle — CRM user accounts and their page permissions. It is the highest-privilege front end in the estate: a session here can read and modify essentially all candidate, client and financial data.",
+    "actors": "Novello internal staff authenticate with email and password against the API and receive a JWT, which this application stores in `localStorage` along with the cached user object and menu. All users hold the `CRM_ADMIN` role; what distinguishes them is the per-page permission set introduced this cycle, applied by a `PermissionGate` in the main layout. The realistic attacker is not an outsider but a stored payload: content authored through any surface that later renders as rich text executes with the privileges of whichever administrator views it.",
+    "dataFlows": "The application boots, reads the token from `localStorage` into the Axios instance, and fetches the signed-in user and their permissions. Page access is decided client-side by `PermissionGate`; data is fetched per screen into Redux Toolkit slices with no caching layer, so navigating back to a screen refetches it. Rich text — notification content and clamped text fields — is rendered with `dangerouslySetInnerHTML` directly from the API response. Mutations post back through Axios; responses update the slices. There is no error boundary reporting to any backend, so an exception ends at the console.",
+    "invariants": [
+      { "statement": "The session credential cannot be read by script running on the page.", "status": "VIOLATED", "findingId": "C1", "note": "`storageService` is a thin `localStorage` wrapper and `storageAccessToken` uses it, so the token is readable by any JavaScript on the origin." },
+      { "statement": "No server-supplied value is ever interpreted as markup.", "status": "VIOLATED", "findingId": "C2", "note": "Two `dangerouslySetInnerHTML` sites render API strings directly, and no sanitiser exists in the dependency tree." },
+      { "statement": "A permission withheld from a CRM user withholds the data behind it.", "status": "VIOLATED", "findingId": "C8", "note": "`PermissionGate` hides the page; the companion server report confirms the API performs no permission check, so the endpoint remains callable." },
+      { "statement": "A change cannot reach production without tests and lint passing.", "status": "VIOLATED", "findingId": "C3", "note": "The `test` stage contains only `sonar_beta` with `allow_failure: true`; no job runs the 26 test files or ESLint." },
+      { "statement": "A failure in the browser is visible to the team without a user reporting it.", "status": "VIOLATED", "findingId": "C4", "note": "No Sentry, Bugsnag or Rollbar package, and no error-reporting configuration anywhere." },
+      { "statement": "Navigating away from a screen cancels the work it started.", "status": "VIOLATED", "findingId": "C5", "note": "Four `AbortController` references exist, all within one import modal; no cancellation elsewhere." },
+      { "statement": "The same server data is fetched once and shared, not refetched per mount.", "status": "VIOLATED", "findingId": "C6", "note": "`@reduxjs/toolkit` is the only state library; no react-query, SWR or equivalent cache is present." },
+      { "statement": "An injected script is constrained by a Content Security Policy.", "status": "VIOLATED", "note": "No CSP in the HTML template, the nginx configuration or the Dockerfile (G1), so an injected script faces no origin or inline-script restriction." },
+      { "statement": "The build toolchain receives security updates.", "status": "VIOLATED", "findingId": "C7", "note": "`react-scripts` 5.0.0 — Create React App, no longer maintained — with React 17, Ant Design 4 and TypeScript 4.6." },
+      { "statement": "Interactive surfaces meet a stated accessibility standard.", "status": "CHECK", "note": "`eslint-plugin-jsx-a11y` 6.5.1 is present, which is more than July recorded, but no conformance target is stated and no runtime testing (axe or equivalent) exists (G3)." }
+    ]
+  },
+
+  "threatModel": "The attacker to design against is a stored payload rather than a person at a keyboard. The CRM renders server-supplied rich text as markup with no sanitiser, and holds a long-lived API token in `localStorage` on the same origin — so any content that reaches a rendered field and survives to a later view executes with the privileges of the administrator viewing it, reads the token, and can then call the API directly. The companion server report makes the consequence concrete: that token is accepted on 65 role-unrestricted endpoints and will read any candidate's compliance record. There is no CSP to constrain the injected script and no client error reporting to notice any of it. A second, quieter risk is a trusted insider: because the permission model is enforced only in this application, a CRM user who has had a page withheld can reach the same data by calling the endpoint the hidden page would have called.",
+
+  "coverage": {
+    "method": "Refresh review, baseline-differential. All seven findings and all three capability gaps from the 2026-07-29 assessment were re-tested against the current tree, then the surface added this cycle — principally CRM user permissions — was reviewed for new defects and for its relationship to the server's enforcement. Static review only: no browser session, no runtime profiling and no penetration testing. The test suite was not executed.",
+    "size": "129 commits since baseline commit d2284301, +17,267/−1,239 lines across 306 files, measured with `git diff --stat` excluding lockfiles. 26 test files (15 at baseline).",
+    "deepRead": [
+      "src/utils/storage/storageService.ts and storageVariables.ts — in full, the token storage mechanism",
+      "src/libs/axios.ts — token attachment and interceptors",
+      "src/components/Clamp/Clamp.tsx — the first unsanitised render site",
+      "src/modules/notifications/components/NotificationsTable/NotificationsTable.tsx — the second",
+      "src/components/Routes/PrivateRoute.tsx — in full, including the comment documenting where page access is now decided",
+      "src/modules/crm-users/components/CrmUserPermissionsForm/CrmUserPermissionsForm.tsx — the permissions management surface",
+      "src/modules/shift-processing/components/ImportShiftAndReviewModal/ImportShiftAndReviewModal.tsx — the one correct AbortController usage",
+      ".gitlab-ci.yml — stage and job structure",
+      "package.json — dependency versions, scripts and the absence of a sanitiser, error reporter and query cache"
+    ],
+    "grepSwept": [
+      "`dangerouslySetInnerHTML` across all of `src/` — two sites, both unchanged from July",
+      "`dompurify` / `sanitize-html` / `xss` in package.json — none present",
+      "`localStorage` / `sessionStorage` / cookie usage across `src/`",
+      "`sentry` / `bugsnag` / `rollbar` in package.json — none present",
+      "`AbortController` / `AbortSignal` / `CancelToken` / `signal:` across `src/` — four references in one file",
+      "`react-query` / `@tanstack/react-query` / `swr` / `@reduxjs/toolkit` in package.json",
+      "`content-security-policy` across `public/`, `src/`, nginx configuration and Dockerfile — none",
+      "`eslint-plugin-jsx-a11y` / `axe` in package.json",
+      "`permission` across `src/` to locate every enforcement and management site",
+      "test and spec file counts at HEAD versus the baseline commit"
+    ],
+    "notRead": [
+      "`node_modules/` — dependency internals were not audited, and no `npm audit` was run",
+      "The majority of the 306 changed files — review was directed by the baseline findings and the new permissions surface rather than reading the diff in full",
+      "The 26 test files' contents and assertions; they were counted, not evaluated, and the suite was not executed",
+      "Ant Design component usage for accessibility conformance — the presence of lint tooling was checked, actual conformance was not",
+      "Runtime behaviour: no browser session, so bundle size, render performance and actual refetch volume under C6 were not measured",
+      "The backend API — assessed separately in `novello-server` and `novello-database`"
+    ],
+    "caveats": [
+      "C1 and C2 are reported as a compound risk rather than two independent findings, because the severity of each depends on the other. If the injection path in C2 were closed, `localStorage` storage would be a defence-in-depth concern rather than a blocker; if the token were moved out of script reach, C2 would remain serious but no longer yield the session. The remediation order matters and is set out in the findings.",
+      "No stored payload was planted and executed, so C2 is Confirmed on the code path — unsanitised server strings rendered as markup with no sanitiser present — rather than on a demonstrated exploit. Which authoring surfaces actually reach these two components was not exhaustively traced; notification content clearly does.",
+      "C8's conclusion depends on the companion server report's finding that `CheckCrmPermission` has no call sites outside its own module. That was verified in the server repository during this engagement, but if server-side enforcement is added later this finding closes without any change to the CRM.",
+      "C6's practical cost — how much redundant fetching actually occurs — was not measured, since that needs a browser session. The finding rests on the architecture (no cache library present) rather than on observed request volume.",
+      "The toolchain assessment in C7 reads declared versions from `package.json`. Whether any currently-known vulnerability affects the installed tree was not established, because no dependency audit was run; that is part of what C3's missing audit job would provide.",
+      "Accessibility is marked CHECK rather than assessed. `eslint-plugin-jsx-a11y` is present but whether its rules are enabled as errors in the ESLint configuration, and whether the application meets any stated standard, were not determined."
+    ]
+  },
+
+  "findings": [
+    {
+      "id": "C1",
+      "title": "The access token is stored in `localStorage`, readable by any script on the page",
+      "ruleId": "SEC-003",
+      "group": "Authentication & Session",
+      "layer": "Frontend",
+      "dimension": "security",
+      "riskDimension": "Security",
+      "criticality": "High",
+      "priority": "P0",
+      "phase": 1,
+      "gate": "blocks-prod",
+      "confidence": "Confirmed",
+      "claim": "`storageAccessToken` is built on a generic `localStorage` wrapper, so the API token — along with the cached user object and menu — is readable by any JavaScript executing on the origin. Unchanged since July.",
+      "evidence": [
+        { "file": "src/utils/storage/storageService.ts", "line": 12, "snippet": "const storageService = (name: string) => ({\n  has: () => !!localStorage.getItem(name),\n  get: () => tryJsonParse(localStorage.getItem(name)),\n  set: (val: unknown) => localStorage.setItem(name, JSON.stringify(val)),\n  remove: () => localStorage.removeItem(name),\n})", "note": "The backing store is `localStorage` unconditionally — there is no session or cookie variant." },
+        { "file": "src/utils/storage/storageVariables.ts", "line": 3, "snippet": "export const storageAccessToken = storageService('accessToken')\nexport const storageMenu = storageService('menu')\nexport const storageUser = storageService('user')", "note": "The token sits alongside the cached user record, so an injected script gets both the credential and the identity it belongs to." },
+        { "file": "src/libs/axios.ts", "line": 10, "note": "The Axios instance reads the token from that store and attaches it to every request, so whatever a script steals is immediately usable against the API." }
+      ],
+      "reasoning": "`localStorage` has no protection against script access by design — its contents are available to any code running on the origin, and it persists across tabs and restarts. On its own that is a known trade-off many applications accept. It is a P0 here because C2 supplies the script: this application renders server-supplied HTML without sanitisation, so the precondition for reading the token is satisfied inside the same codebase. The companion server report then determines the blast radius — that token is accepted on 65 role-unrestricted endpoints and will read any candidate's compliance record.",
+      "impact": "Removes the session credential from the reach of page scripts, so an injected payload can no longer escalate into a full administrator session against the API.",
+      "refutation": "Checked whether the token is short-lived enough that theft would be of limited use — the companion server report establishes a 30-day JWT TTL with no revocation mechanism, so a stolen token is usable for weeks and cannot be withdrawn. Checked whether an HttpOnly cookie is already used in parallel: no cookie-based auth appears in the Axios configuration. Checked whether the CRM is served on an isolated origin that would limit script injection: it is a normal SPA origin with no CSP (G1). Survives unchanged.",
+      "remediation": "Close C2 first, since it is cheaper and removes the active exploitation path. Then move the token itself: the robust answer is an HttpOnly, Secure, SameSite cookie issued by the API, which requires a coordinated backend change; the intermediate answer is to hold the access token in memory only and keep a refresh token in an HttpOnly cookie, so a page refresh re-authenticates silently but no long-lived credential is readable. Keep the cached user object out of `localStorage` too — it is not a credential, but it tells an attacker exactly whose session they hold.",
+      "effortDays": 3,
+      "role": "Frontend Engineer"
+    },
+    {
+      "id": "C2",
+      "title": "Server-supplied rich text is rendered as HTML with no sanitiser anywhere in the project",
+      "ruleId": "SEC-013",
+      "group": "Input Handling",
+      "layer": "Frontend",
+      "dimension": "security",
+      "riskDimension": "Security",
+      "criticality": "High",
+      "priority": "P0",
+      "phase": 1,
+      "gate": "blocks-prod",
+      "confidence": "Confirmed",
+      "instances": 2,
+      "claim": "Two components pass API-supplied strings straight into `dangerouslySetInnerHTML`, and the dependency tree contains no DOMPurify, sanitize-html or equivalent — so a stored payload renders as live markup in an administrator's session. Unchanged since July, same files and lines.",
+      "evidence": [
+        { "file": "src/modules/notifications/components/NotificationsTable/NotificationsTable.tsx", "line": 52, "snippet": "<div className=\"rich-editor-content\" dangerouslySetInnerHTML={{__html: content}} />", "note": "`content` is notification body text from the API, authored through the CRM's own rich-text editor — a stored-payload path from one staff user to every other." },
+        { "file": "src/components/Clamp/Clamp.tsx", "line": 37, "snippet": "dangerouslySetInnerHTML={text ? {__html: text} : undefined}", "note": "A shared presentational component, so every caller inherits the behaviour. Its reuse is what makes this hard to bound by inspection." },
+        { "file": "package.json", "note": "No `dompurify`, `sanitize-html` or `xss` dependency — verified by searching the manifest. So no sanitisation is applied anywhere, not merely missed at these two call sites." }
+      ],
+      "reasoning": "React escapes interpolated values by default; `dangerouslySetInnerHTML` is the documented opt-out, and opting out without a sanitiser means the value is trusted absolutely. The content is not trusted: it arrives from an API whose write paths the companion report shows are broadly reachable. `Clamp` is the more serious of the two because it is generic — any screen that clamps a server-supplied string is a potential sink, and which fields reach it cannot be settled by reading two files.",
+      "reproduction": "Author a notification whose rich-text body contains an `onerror` or inline-script payload, save it, and open the notifications table as another CRM user. The markup renders and executes with that user's session, at which point `localStorage.getItem('accessToken')` (C1) is readable.",
+      "impact": "Restores React's default escaping guarantee for untrusted content, closing the stored-payload path that currently turns authoring access into administrator session theft.",
+      "refutation": "Checked whether the API sanitises on write, which would make client-side rendering safe — the companion server report found no sanitisation middleware and 65 role-unrestricted write-capable endpoints, so server-side cleaning cannot be assumed. Checked whether the rich-text editor constrains what can be saved: client-side editor restrictions are not an authorisation boundary and are bypassed by calling the API directly. Checked whether a CSP would blunt an injected script: none exists (G1). Survives unchanged.",
+      "remediation": "Add DOMPurify and wrap both sites in a single shared `SafeHtml` component so the sanitisation is applied in one place and future sinks inherit it rather than reintroducing the hole. Configure an allow-list matching what the rich-text editor can legitimately produce — formatting and links, no scripts, no event handlers, no iframes. Then grep for `dangerouslySetInnerHTML` in CI to prevent a new raw usage appearing.",
+      "sampleFix": "// components/SafeHtml.tsx — the only place __html is ever constructed\nimport DOMPurify from 'dompurify'\n\nexport const SafeHtml = ({html, ...rest}: {html?: string}) => (\n  <div {...rest} dangerouslySetInnerHTML={{__html: DOMPurify.sanitize(html ?? '')}} />\n)",
+      "effortDays": 2,
+      "role": "Frontend Engineer"
+    },
+    {
+      "id": "C3",
+      "title": "The pipeline cannot fail a change — the test stage holds one advisory Sonar job",
+      "ruleId": "DVO-002",
+      "group": "Delivery",
+      "layer": "Infrastructure",
+      "dimension": "devops",
+      "riskDimension": "Reliability",
+      "criticality": "Medium",
+      "priority": "P1",
+      "phase": 1,
+      "gate": "blocks-prod",
+      "confidence": "Confirmed",
+      "claim": "`.gitlab-ci.yml` defines `test`, `build` and `deploy` stages, but the only job in `test` is `sonar_beta` with `allow_failure: true`; no job runs the 26 test files, ESLint or a dependency audit. Unchanged since July.",
+      "evidence": [
+        { "file": ".gitlab-ci.yml", "line": 8, "snippet": "sonar_beta:\n  stage: test\n  ...\n  script:\n    - sonar-scanner\n  allow_failure: true", "note": "The whole of the test stage. `allow_failure: true` makes the result advisory by definition." },
+        { "file": ".gitlab-ci.yml", "line": 30, "note": "The `build` stage follows and runs regardless of the Sonar outcome, so a failing scan does not interrupt the path to deploy." },
+        { "file": "package.json", "note": "26 test files exist in `src/`, up from 15 at the baseline commit, and no CI job invokes them. ESLint is configured — `eslint-plugin-jsx-a11y` among the plugins — and is likewise never run in the pipeline." }
+      ],
+      "reasoning": "This is the finding that explains the shape of this report. Two P0s survived 129 commits and 306 changed files, and nothing in delivery was capable of objecting. The tests the team wrote this cycle are the clearest loss: they went to the effort of adding eleven more test files and the pipeline ignores all of them, so their value depends on individual discipline rather than on the system.",
+      "impact": "Gives the pipeline the ability to reject a change, which is the precondition for every other remediation in this report staying fixed once it is done.",
+      "refutation": "Checked for a second pipeline or a pre-commit hook that might enforce this instead — no `.husky` directory or equivalent was found in this repository, and no other CI definition exists. Checked whether Sonar's own quality gate could block despite the flag — `allow_failure: true` is precisely the instruction not to block. Survives unchanged. Gated as blocks-prod rather than warning because the two P0 fixes in Phase 1 would otherwise ship with nothing verifying them.",
+      "remediation": "Add a job to the `test` stage running `npm test -- --watchAll=false` and `eslint`, plus `npm audit --audit-level=high`, and make them required for merge in branch protection. Run the existing 26 test files first to confirm they pass before making them blocking — the companion server report found a red suite in that repository, so do not assume. Remove `allow_failure` from Sonar once the baseline is clean.",
+      "effortDays": 3,
+      "role": "DevOps Engineer"
+    },
+    {
+      "id": "C8",
+      "title": "The CRM permission model is enforced only in the browser",
+      "ruleId": "SEC-005",
+      "group": "Authentication & Session",
+      "layer": "Frontend",
+      "dimension": "security",
+      "riskDimension": "Security",
+      "criticality": "Medium",
+      "priority": "P1",
+      "phase": 2,
+      "gate": "warning",
+      "confidence": "Confirmed",
+      "claim": "A full CRM permissions management surface was added this cycle and page access is decided by a `PermissionGate` in the main layout, but the companion server report establishes that the API performs no permission check — so hiding a page does not withhold the data behind it.",
+      "evidence": [
+        { "file": "src/components/Routes/PrivateRoute.tsx", "line": 13, "snippet": "/**\n * Signed-in check only. Which pages a CRM user may open is decided per route by\n * `PermissionGate` inside the main layout (NOV-151).", "note": "The team's own documentation of where enforcement lives — in the layout, i.e. in the browser." },
+        { "file": "src/modules/crm-users/components/CrmUserPermissionsForm/CrmUserPermissionsForm.tsx", "line": 49, "note": "A substantial management surface with per-page and per-action toggles plus bulk row, column and select-all operations — so administrators are presented with a detailed access control." },
+        { "file": "src/layouts/MainLayout/config.tsx", "note": "Menu composition is permission-driven too, so a withheld page is both unreachable by navigation and invisible — which is exactly what makes the gap easy to miss." },
+        { "file": "src/modules/crm-users/components/ManageCrmUserPermissionsModal.tsx", "line": 7, "note": "`useGetCrmPermissionPages` — the page registry is fetched from the API, so the server knows the model exists; it simply does not check it on the endpoints the pages call." }
+      ],
+      "reasoning": "A client-side check is a user-experience affordance, not an access control, because the browser is under the user's control and the API is directly callable with the same token. The finding is recorded against the CRM as well as the server because this is where the feature is presented to administrators: someone using this screen to withhold invoices from a colleague reasonably believes they have withheld access to invoices. The honest position is either to enforce it server-side or to label it as navigation.",
+      "reproduction": "Withhold a page's permission from a CRM user in this screen, sign in as that user and confirm the page is hidden. Then call the endpoint that page uses directly with the same user's token — per the companion server report, it returns the data, because `RolesGuard` checks only `user.role === CRM_ADMIN`.",
+      "impact": "Makes the permission screen a control administrators can rely on, so withholding a page genuinely withholds the data rather than only the menu entry.",
+      "refutation": "Checked whether the server might enforce permissions through a mechanism this application cannot see — the companion engagement searched the server tree for `CheckCrmPermission` outside its own module and found no call sites, and `RolesGuard` consults only the role claim. Checked whether the gate is intended purely as navigation, which would make this a labelling issue: the management surface models per-page and per-action grants and the server has a `cannot-edit-own-crm-permissions` error, which is the shape of an access control rather than a menu preference. P1 rather than P0 because the caller must already hold a valid CRM account.",
+      "remediation": "The fix belongs in the server — see the corresponding finding in `novello-server`, which proposes a `@RequiresCrmPermission` guard driven by the existing page registry. This application's part is to keep `PermissionGate` as the UX layer and, until the server enforces it, state plainly in the permissions screen that it controls navigation rather than data access, so administrators are not misled in the interim.",
+      "effortDays": 2,
+      "role": "Full-Stack Engineer",
+      "rationale": "P1 rather than P0 because exploitation requires an already-trusted CRM account and exposes internal rather than cross-tenant data. Phase 2 because the substantive fix is the server-side guard, which that report sequences there."
+    },
+    {
+      "id": "C4",
+      "title": "Test coverage is thin against the change volume, and there is no client error reporting at all",
+      "ruleId": "TST-003",
+      "group": "Quality Assurance",
+      "layer": "Frontend",
+      "dimension": "observability",
+      "riskDimension": "Maintainability",
+      "criticality": "Medium",
+      "priority": "P1",
+      "phase": 2,
+      "gate": "warning",
+      "confidence": "Confirmed",
+      "claim": "Test files grew from 15 to 26 while 306 files changed, and the dependency tree contains no error-reporting client — no Sentry, Bugsnag or Rollbar — so browser exceptions and failed requests are invisible to the team.",
+      "evidence": [
+        { "file": "package.json", "note": "No `@sentry/react`, `bugsnag` or `rollbar` dependency. The companion server report confirms Sentry is wired on the backend, so the platform reports server errors and nothing from the browser." },
+        { "file": "src/modules/crm-users/pages/CrmUsersListPage.test.tsx", "note": "Representative of the new tests — the permissions feature did arrive with some coverage, which is the right instinct." },
+        { "file": "src/modules/crm-users/components/CreateCrmUserModal.test.tsx", "note": "Likewise. 26 files total at HEAD against 15 at the baseline commit." },
+        { "file": ".gitlab-ci.yml", "line": 8, "note": "And none of them runs in the pipeline (C3), so the coverage that exists does not protect the branch." }
+      ],
+      "reasoning": "Two gaps with one consequence: nothing tells the team when this application breaks. Tests would catch a regression before merge and there are too few, running nowhere; error reporting would catch one in production and there is none. The practical effect for this report is that neither P0 would be noticed if exploited — an injected script causing errors in an administrator's browser produces no signal anywhere. Reported under observability rather than maintainability because the absent error reporting is the more consequential half.",
+      "impact": "Makes failures in the highest-privilege front end visible without a user reporting them, and puts a regression net under the security fixes in Phase 1.",
+      "refutation": "Checked whether an error boundary exists that reports somewhere — error boundaries were not found reporting to any backend; an uncaught exception ends at the console. Checked whether the 26 test files cover the security-relevant paths specifically: they cluster around the new CRM users and permissions screens, not around token handling or HTML rendering, so the Phase 1 fixes have no existing coverage to build on. Downgraded from the July framing of 'negligible coverage', which is no longer accurate.",
+      "remediation": "Add an error-reporting client with release tracking and source maps, and an error boundary at the route level so a render failure reports rather than blanking the screen — this is a day's work and immediately useful. Then write tests for the Phase 1 changes as part of those changes: that the token is not written to `localStorage`, and that `SafeHtml` strips a script payload.",
+      "effortDays": 8,
+      "role": "Frontend Engineer"
+    },
+    {
+      "id": "C5",
+      "title": "In-flight requests are not cancelled on unmount, outside one import modal",
+      "ruleId": "PERF-011",
+      "group": "Performance",
+      "layer": "Frontend",
+      "dimension": "scalability",
+      "riskDimension": "Performance",
+      "criticality": "Medium",
+      "priority": "P1",
+      "phase": 2,
+      "gate": "warning",
+      "confidence": "Confirmed",
+      "claim": "Only four `AbortController` references exist in the entire application and all are inside a single shift-import modal; every other screen leaves its requests running after unmount, so late responses resolve into unmounted components and stale data can overwrite fresh.",
+      "evidence": [
+        { "file": "src/modules/shift-processing/components/ImportShiftAndReviewModal/ImportShiftAndReviewModal.tsx", "line": 53, "snippet": "const abortControllerRef = React.useRef<null | AbortController>(null)", "note": "Added this cycle, and done properly — a ref holding the controller, created per request at line 83. This is the pattern the rest of the application needs." },
+        { "file": "src/libs/axios.ts", "note": "The shared Axios instance exposes no cancellation convention, so every consumer would have to plumb a signal through by hand — which is why only the one modal does." },
+        { "file": "src/store", "note": "Redux thunks dispatch fetches per screen with no abort on unmount, so a navigation away leaves the request in flight and its fulfilled action still updates the slice." }
+      ],
+      "reasoning": "Two consequences, one visible and one not. The visible one is a race: navigating between screens that write to the same slice can let a slower earlier request land after a faster later one, showing stale data with no error. The invisible one is wasted work — the API and database complete requests whose results are discarded, which the companion reports show is expensive against unindexed legacy collections. The single correct adoption this cycle is the useful detail: the team reached for the right tool when a request was slow enough to notice, and the pattern has not generalised.",
+      "impact": "Eliminates a class of stale-data race on screen transitions and stops the API doing work whose result is thrown away.",
+      "refutation": "Checked whether Redux Toolkit's `createAsyncThunk` cancellation is used — the thunks do not pass `signal` from the thunk API to Axios, so the built-in abort support is available but unused. Checked whether a query cache handles it implicitly: none is present (C6), which is why this is a separate finding rather than a symptom of that one. Survives, improved by exactly one call site.",
+      "remediation": "Largely subsumed by C6 — adopting a query library gives cancellation, deduplication and staleness handling together, which is why the two are sequenced in the same phase. If C6 is deferred, add a `useAbortableRequest` hook wrapping the Axios signal and apply it to the thunks that fetch list and detail data, taking the import modal as the reference.",
+      "effortDays": 4,
+      "role": "Frontend Engineer"
+    },
+    {
+      "id": "C6",
+      "title": "Server state is held in Redux with no caching or request deduplication",
+      "ruleId": "PERF-010",
+      "group": "Architecture",
+      "layer": "Frontend",
+      "dimension": "scalability",
+      "riskDimension": "Performance",
+      "criticality": "Medium",
+      "priority": "P1",
+      "phase": 2,
+      "gate": "warning",
+      "confidence": "Confirmed",
+      "claim": "`@reduxjs/toolkit` is the only state library in the dependency tree — no react-query, SWR or RTK Query usage — so every screen refetches on mount, concurrent requests for the same resource are not deduplicated, and cache invalidation after a mutation is hand-written per slice.",
+      "evidence": [
+        { "file": "package.json", "line": 11, "snippet": "\"@reduxjs/toolkit\": \"^1.8.0\",", "note": "Present, and RTK Query ships inside it — so the capability is already installed and unused, which makes adoption incremental rather than a new dependency." },
+        { "file": "src/store", "note": "Slices hold fetched entities with per-slice loading and error flags, the pattern that produces the duplicated fetch orchestration across components." },
+        { "file": "src/modules/crm-users/components/ManageCrmUserPermissionsModal.tsx", "line": 7, "note": "`useGetCrmPermissionPages` — a hand-rolled fetching hook, the shape that a query library exists to replace. The new code follows the established pattern faithfully." }
+      ],
+      "reasoning": "Modelling server data as client state means every consumer has to answer questions a cache would answer for it: is this stale, is someone else already fetching it, what invalidates it after a write. Doing that by hand in each slice is where the refetch-on-every-mount behaviour and the C5 races come from. This is an architecture finding rather than a defect — nothing is broken — but it is the root of two of the other findings and it sets the cost of every new screen.",
+      "impact": "Cuts redundant API traffic and removes the hand-written cache invalidation and loading-state code from every slice, while providing the cancellation and staleness handling that C5 currently lacks.",
+      "refutation": "Checked whether RTK Query is already used anywhere, which would make this a partial migration rather than an absence — no `createApi` usage was found, so the Redux Toolkit dependency is being used for slices only. Checked whether the refetch cost is actually material: not measured, because that needs a browser session, so the finding is stated on the architecture rather than on observed request volume and is held at P1 rather than raised.",
+      "remediation": "Adopt RTK Query, which is already in the installed Redux Toolkit and therefore adds no dependency. Migrate incrementally, starting with the highest-traffic read screens — candidates and shifts lists — and take C5 with it, since cancellation comes free. Leave genuine client state (filters, modals, page config) in slices; only server data moves.",
+      "effortDays": 8,
+      "role": "Frontend Engineer"
+    },
+    {
+      "id": "C7",
+      "title": "The toolchain is several major versions behind, on an unmaintained build system",
+      "ruleId": "DEP-003",
+      "group": "Dependencies",
+      "layer": "Frontend",
+      "dimension": "maintainability",
+      "riskDimension": "Maintainability",
+      "criticality": "Medium",
+      "priority": "P2",
+      "phase": 3,
+      "gate": "clear",
+      "confidence": "Confirmed",
+      "claim": "The application runs React 17, Ant Design 4, TypeScript 4.6 and `react-scripts` 5.0.0 — Create React App, which is no longer maintained and is the constraint underneath the rest. Unchanged since July.",
+      "evidence": [
+        { "file": "package.json", "line": 43, "snippet": "\"react-scripts\": \"5.0.0\",", "note": "Create React App. It receives no further releases, so build-chain vulnerabilities and modern tooling support both stop here." },
+        { "file": "package.json", "line": 32, "snippet": "\"react\": \"^17.0.2\",", "note": "React 17, with 18 and 19 released since. Keeps the application off concurrent rendering and off the current ecosystem baseline." },
+        { "file": "package.json", "line": 19, "snippet": "\"antd\": \"^4.20.6\",", "note": "Ant Design 4 against 5 current — the component library is the largest single dependency in the UI and the most work to move." },
+        { "file": "package.json", "line": 46, "snippet": "\"typescript\": \"^4.6.2\",", "note": "TypeScript 4.6, which also bounds the type definitions available from newer libraries." }
+      ],
+      "reasoning": "Nothing is broken today, which is why this is P2. The cost is compounding: an unmaintained build system means no security patches to the build chain, no path to current React, and a widening gap to every library the team might want. It also interacts with C3 — without a dependency audit in CI, a vulnerability in this tree would not be noticed, and the remediation for that vulnerability might require the upgrade that has been deferred.",
+      "impact": "Returns the application to a maintained build chain with a supported upgrade path, so dependency vulnerabilities can be patched rather than worked around.",
+      "refutation": "Checked whether a migration is already underway — no Vite configuration or parallel build setup exists, so this is not a partial move. Checked whether any currently-known vulnerability affects the installed tree, which would raise the priority: not established, because no dependency audit was run; that is part of what C3 would provide and the reason the audit job should land before this is scheduled.",
+      "remediation": "Sequence it: migrate the build from Create React App to Vite first, which is largely mechanical and immediately improves build and test times, then React 17 to 18, then Ant Design 4 to 5 — the last being the bulk of the work and best done after C6, since a query migration touches many of the same components. Add the dependency audit from C3 before starting, so the upgrade is driven by known exposure rather than version numbers alone.",
+      "effortDays": 10,
+      "role": "Frontend Engineer"
+    }
+  ],
+
+  "gaps": [
+    {
+      "capability": "Content Security Policy",
+      "area": "Security",
+      "status": "missing",
+      "why": "Re-verified: no CSP in the HTML template, the nginx configuration or the Dockerfile. This matters more here than in most applications because C2 provides an injection path and C1 puts a long-lived API token on the same origin — a CSP restricting inline script execution and connect destinations is the control that would blunt the payload even if it renders. Its absence is why the two findings compose into full session theft rather than a contained defacement.",
+      "recommendation": "Add a CSP at the serving layer, starting in report-only mode so existing inline usage surfaces without breaking the application, then enforce. Restrict `script-src` to self with no `unsafe-inline`, and `connect-src` to the API origin so an injected script cannot exfiltrate to an arbitrary host. Pair the rollout with C2 so the two controls are verified together.",
+      "priority": "P1",
+      "phase": 1,
+      "effortDays": 2,
+      "role": "DevOps Engineer",
+      "layer": "Frontend"
+    },
+    {
+      "capability": "Client performance monitoring",
+      "area": "Observability",
+      "status": "missing",
+      "why": "Re-verified: no real-user monitoring, no Core Web Vitals collection and no bundle-size budget. C4 covers the absence of error reporting; this is the performance half. Nobody can say how long the heaviest CRM screens take for staff on real connections, which also means C6's refetch cost and C7's build-chain impact are both unquantified — the two findings most often justified by 'it feels slow' have no measurement behind them.",
+      "recommendation": "Collect Core Web Vitals and route-level timings from real sessions, and add a bundle-size budget to the build so a regression is visible at merge. Do it after C7's build migration, since Vite changes the bundle shape and a budget set against the Create React App output would need resetting immediately.",
+      "priority": "P2",
+      "phase": 3,
+      "effortDays": 3,
+      "role": "Frontend Engineer",
+      "layer": "Frontend"
+    },
+    {
+      "capability": "Accessibility conformance",
+      "area": "User Experience",
+      "status": "partial",
+      "why": "Partially addressed since July, which is a change worth recording: `eslint-plugin-jsx-a11y` 6.5.1 is now in the dependency tree, so the lint capability exists. What is still missing is any stated conformance target, any runtime testing, and — because of C3 — any guarantee the lint rules run at all. For an internal tool used all day by operational staff, keyboard navigation and screen-reader support in the dense Ant Design tables are the practical concern rather than formal compliance.",
+      "recommendation": "Confirm the jsx-a11y rules are enabled as errors rather than warnings and get them running via the C3 lint job, state a conformance target (WCAG 2.1 AA is the usual baseline for internal tooling), then add automated axe checks to the test suite for the highest-traffic screens.",
+      "priority": "P2",
+      "phase": 3,
+      "effortDays": 5,
+      "role": "Frontend Engineer",
+      "layer": "Frontend"
+    }
+  ],
+
+  "refutedCandidates": [
+    {
+      "claim": "The number of unsanitised HTML render sites has grown with the 306 changed files.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "It has not. A sweep of all of `src/` for `dangerouslySetInnerHTML` returns exactly two sites, the same two files and the same two lines recorded in July — `Clamp.tsx:37` and `NotificationsTable.tsx:52`. Seventeen thousand lines were added without introducing a third. The finding survives unchanged rather than worsening, which is worth stating precisely: the problem is the absent sanitiser, not a spreading pattern."
+    },
+    {
+      "claim": "The new CRM permissions feature introduced a client-side authorisation bypass.",
+      "verdict": "Downgraded",
+      "step": 3,
+      "reasoning": "The feature did not introduce the gap — it exposed it. `PermissionGate` doing the enforcement in the layout is a reasonable UX implementation, and the server was always the place authorisation had to happen. Reframed as C8: the defect is that the server does not enforce the model this screen manages, with the substantive fix recorded against `novello-server`. The CRM's share is the misleading presentation while that remains true."
+    },
+    {
+      "claim": "Requests are never cancelled anywhere in the application.",
+      "verdict": "Downgraded",
+      "step": 2,
+      "reasoning": "One screen does it, and does it correctly. `ImportShiftAndReviewModal` holds an `AbortController` in a ref and creates a fresh controller per request — four references, all in that file. So the July claim of a blanket absence is no longer accurate; C5 is restated as a pattern that exists in one place and has not generalised, which also gives the remediation a reference implementation inside the codebase."
+    },
+    {
+      "claim": "The application has negligible test coverage.",
+      "verdict": "Downgraded",
+      "step": 2,
+      "reasoning": "Test files grew from 15 at the baseline commit to 26 at HEAD, and the new ones cluster around the CRM users and permissions screens added this cycle — so the team did write tests alongside the new feature. Restated as C4: coverage is thin relative to 306 changed files and absent from the security-relevant paths, and nothing in CI runs it. The blanket 'negligible' framing is refuted."
+    },
+    {
+      "claim": "Accessibility tooling is absent, as recorded in July.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "`eslint-plugin-jsx-a11y` 6.5.1 is present in `package.json`. The capability gap is downgraded from missing to partial on that basis. What remains unverified is whether its rules are configured as errors and whether they ever execute, since C3 establishes that no lint job runs in the pipeline."
+    },
+    {
+      "claim": "The token could be protected by moving it to `sessionStorage`.",
+      "verdict": "Refuted",
+      "step": 3,
+      "reasoning": "Considered as a cheap mitigation for C1 and rejected. `sessionStorage` is equally readable by any script on the origin — it differs only in lifetime, not in script accessibility — so it would not blunt the C2 payload at all. The remediation for C1 therefore proposes in-memory storage with an HttpOnly refresh cookie, which is the change that actually removes the credential from script reach."
+    },
+    {
+      "claim": "RTK Query would need to be added as a new dependency to address the server-state findings.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "It ships inside `@reduxjs/toolkit`, which is already installed at ^1.8.0 — a search found no `createApi` usage, so the capability is present and unused. That materially changes the remediation for C6 and C5: adopting it is an incremental migration within an existing dependency rather than a new library decision, which is why the effort is estimated for migration rather than for evaluation and adoption."
+    }
+  ],
+
+  "positivePosture": [
+    {
+      "title": "The injection surface has not grown despite 17,000 new lines",
+      "detail": "Two `dangerouslySetInnerHTML` sites existed in July and two exist now, in the same files. Across 306 changed files and a substantial new feature area, nobody reached for the escape hatch again. That is a meaningful signal about the default discipline in the codebase — the finding is a missing sanitiser at two known sinks, not a habit that needs correcting."
+    },
+    {
+      "title": "The new permissions feature is well built as a user interface",
+      "detail": "`CrmUserPermissionsForm` provides per-page and per-action toggles with bulk row, column and select-all operations, driven by a page registry fetched from the API rather than hardcoded, and the server carries a `cannot-edit-own-crm-permissions` error so an administrator cannot widen their own access. The design is coherent; the problem is purely that the server does not enforce the model behind it."
+    },
+    {
+      "title": "Request cancellation was introduced correctly where it was needed",
+      "detail": "`ImportShiftAndReviewModal` holds its `AbortController` in a ref and creates a fresh controller per request — the idiomatic pattern, not an approximation of it. The team reached for the right tool when a request was slow enough to matter, which means C5's remediation has a working in-house reference rather than needing a new convention."
+    },
+    {
+      "title": "Tests arrived alongside the new feature",
+      "detail": "Eleven new test files, concentrated on the CRM users and permissions screens built this cycle — `CrmUsersListPage.test.tsx`, `CreateCrmUserModal.test.tsx` among them. Writing tests with new work rather than promising them later is the habit that matters; the gap is that the pipeline does not run them and the older surface remains uncovered."
+    },
+    {
+      "title": "Accessibility linting has been added",
+      "detail": "`eslint-plugin-jsx-a11y` 6.5.1 now appears in the dependency tree, where July found no accessibility tooling at all. For a dense internal tool built on Ant Design tables this is the right first step, and it downgrades the July capability gap from missing to partial."
+    },
+    {
+      "title": "Module structure held up under substantial growth",
+      "detail": "The new CRM users and permissions area follows the same `modules/<feature>/{components,pages}` convention as the rest of the application, with shared presentational components in `src/components` and the storage, axios and store concerns kept separate. Adding a feature area of this size without the structure degrading is why architecture remains the strongest dimension here."
+    }
+  ],
+
+  "inventory": [
+    { "item": "Application", "value": "Novello CRM — internal staff single-page application" },
+    { "item": "Branch / commit", "value": "Alpha/0.0.0.2 @ 1aa70c5f (2026-10-28)" },
+    { "item": "Change since last review", "value": "129 commits, +17,267 / −1,239 lines across 306 files" },
+    { "item": "Framework", "value": "React 17 / TypeScript 4.6 on Create React App (react-scripts 5.0.0)" },
+    { "item": "UI library", "value": "Ant Design 4.20" },
+    { "item": "State management", "value": "Redux Toolkit 1.8 — slices only, RTK Query installed but unused" },
+    { "item": "Session storage", "value": "localStorage — accessToken, user, menu, page config" },
+    { "item": "Unsanitised HTML sinks", "value": "2 — unchanged since July; no sanitiser in the dependency tree" },
+    { "item": "Automated tests", "value": "26 test files (15 at baseline); not run by CI" },
+    { "item": "Error reporting", "value": "None — no Sentry, Bugsnag or Rollbar" },
+    { "item": "Pipeline", "value": "GitLab CI — test stage holds one allow_failure Sonar job; no test, lint or audit gate" },
+    { "item": "Baseline findings resolved", "value": "0 of 7 closed; C4 and C5 partially improved" }
+  ],
+
+  "releaseGates": [
+    { "gate": "Cross-site scripting", "findingRefs": ["C2"], "devTest": "Warning", "prod": "Blocks", "status": "Open", "note": "Two unsanitised render sites and no sanitiser anywhere in the project. Blocks because the payload executes in an administrator session." },
+    { "gate": "Session credential protection", "findingRefs": ["C1"], "devTest": "Warning", "prod": "Blocks", "status": "Open", "note": "A 30-day API token in `localStorage` on the same origin as the injection path in C2. The two together yield full session theft, which is why both block." },
+    { "gate": "Pre-merge quality gate", "findingRefs": ["C3"], "devTest": "Warning", "prod": "Blocks", "status": "Open", "note": "No test, lint or audit job can fail a change. Blocks because the Phase 1 security fixes would otherwise ship with nothing verifying them." },
+    { "gate": "Authorisation enforcement", "findingRefs": ["C8"], "devTest": "Warning", "prod": "Warning", "status": "Open", "note": "The permission model is enforced only in the browser. Warns rather than blocks: the substantive fix is server-side and is tracked in `novello-server`." },
+    { "gate": "Content Security Policy", "findingRefs": [], "devTest": "Warning", "prod": "Warning", "status": "Open", "note": "No CSP at any layer (G1), so an injected script faces no restriction on inline execution or exfiltration destination." },
+    { "gate": "Production error visibility", "findingRefs": ["C4"], "devTest": "Clear", "prod": "Warning", "status": "Open", "note": "No client error reporting, so neither P0 being exploited would produce any signal to the team." },
+    { "gate": "Supported toolchain", "findingRefs": ["C7"], "devTest": "Clear", "prod": "Warning", "status": "Open", "note": "Create React App is unmaintained, so build-chain vulnerabilities have no patch path. Warns because no specific exposure is currently known — which is itself a consequence of the missing audit job." }
+  ],
+
+  "phases": [
+    { "number": 1, "name": "Stabilisation & Risk Mitigation", "objective": "Close the compound session-theft risk and make the pipeline capable of objecting. Sanitise the two HTML sinks first, because that is the cheaper half and removes the active exploitation path, then move the token out of script reach and add a CSP so an injected script is constrained even if one appears again. The test and lint gate is in this phase deliberately: a security fix nothing verifies is not finished." },
+    { "number": 2, "name": "Architecture & Observability", "objective": "Give the application a cache and a voice. Adopt RTK Query — already installed — so server state stops being hand-managed Redux, which brings request cancellation with it, then add error reporting and the tests that pin the Phase 1 fixes. Also state plainly in the permissions screen what it does and does not control, until the server enforces it." },
+    { "number": 3, "name": "Modernisation & Governance", "objective": "Move off the unmaintained build chain — Vite, then React 18, then Ant Design 5 — and add the performance and accessibility measurement that the current toolchain and absent instrumentation make impossible. Sequenced last because none of it is urgent and the Ant Design migration is best attempted after the query migration has settled." }
+  ],
+
+  "architecturalRecommendations": [
+    { "aspect": "Session credential handling", "current": "A 30-day API token in `localStorage`, alongside the cached user object, read into Axios at boot.", "recommended": "No long-lived credential readable by page script.", "recommendation": "Hold the access token in memory and keep a refresh token in an HttpOnly, Secure, SameSite cookie issued by the API. Requires a coordinated backend change, so plan it with the server team rather than as a front-end-only task." },
+    { "aspect": "Untrusted content rendering", "current": "Two components construct `__html` directly from API strings; no sanitiser is installed.", "recommended": "One sanitising component is the only place `__html` is ever built.", "recommendation": "Add DOMPurify behind a shared `SafeHtml` component with an allow-list matching the rich-text editor's legitimate output, then add a CI grep that rejects any new raw `dangerouslySetInnerHTML`." },
+    { "aspect": "Server state", "current": "Redux Toolkit slices with per-slice loading flags, refetch on every mount, hand-written invalidation, and no deduplication.", "recommended": "Server data in a query cache; only genuine client state in slices.", "recommendation": "Adopt RTK Query, which is already inside the installed Redux Toolkit. Migrate the highest-traffic read screens first and let the cancellation and staleness handling in C5 come with it." },
+    { "aspect": "Authorisation", "current": "A detailed permission model managed here and enforced by a `PermissionGate` in the layout — the only enforcement that exists.", "recommended": "The server decides; the client reflects that decision.", "recommendation": "Keep `PermissionGate` as the UX layer and get the server-side guard built (see `novello-server`). Until then, label the permissions screen accurately so administrators are not misled about what it controls." },
+    { "aspect": "Delivery gate", "current": "A test stage containing one advisory Sonar job; 26 test files run nowhere; no lint or audit in CI.", "recommended": "Tests, lint and audit run on every merge request and can block it.", "recommendation": "Add the jobs, confirm the existing suite passes before making them blocking, and make them required in branch protection — otherwise they are advisory in exactly the way Sonar already is." },
+    { "aspect": "Build toolchain", "current": "Create React App 5.0.0 (unmaintained), React 17, Ant Design 4, TypeScript 4.6.", "recommended": "A maintained build with a supported upgrade path.", "recommendation": "Vite first as the mechanical win, then React 18, then Ant Design 5 as the largest piece. Land the dependency audit from C3 beforehand so the sequence is driven by known exposure rather than version numbers." }
+  ],
+
+  "suggestions": [
+    { "suggestion": "Sanitise before moving the token", "description": "C1 and C2 reinforce each other, and of the two, C2 is cheaper and removes the active path. Two days of sanitisation work plus a report-only CSP buys most of the risk reduction while the cookie change — which needs backend coordination — is planned properly.", "impact": "Closes the exploitable chain in days rather than waiting on a cross-team change, without pretending the token storage is then fine." },
+    { "suggestion": "Run the 26 existing tests before making them a gate", "description": "The companion server report found a red suite in that repository after tests had accumulated unrun. The same risk applies here: eleven test files were added this cycle and nothing has executed them in CI, so their current state is unknown.", "impact": "Avoids adding a blocking job that immediately blocks every merge, which is the usual reason such a job gets reverted." },
+    { "suggestion": "Say what the permissions screen actually controls", "description": "Until the server enforces the model, an administrator using this screen is being told they have restricted access they have not restricted. A line of interface text is a one-hour change and materially more honest than leaving the impression intact for a quarter.", "impact": "Removes a false assurance about access control without waiting for the backend work." },
+    { "suggestion": "Read C8 alongside the server report", "description": "This finding has two halves in two repositories and only one fix. The CRM half is presentational; the substantive guard belongs in `novello-server`, where it is sequenced in Phase 2. Treating them as separate tickets risks the front-end half being closed and the gap remaining.", "impact": "Keeps one issue with one owner rather than two tickets that each look complete alone." }
+  ],
+
+  "capabilities": [
+    { "practice": "Session credential kept out of script reach", "status": "absent", "notes": "The access token is in `localStorage` via a generic wrapper, alongside the cached user object (C1)." },
+    { "practice": "Untrusted content escaped or sanitised", "status": "absent", "notes": "Two `dangerouslySetInnerHTML` sites render API strings directly and no sanitiser exists in the dependency tree (C2)." },
+    { "practice": "Content Security Policy", "status": "absent", "notes": "No CSP in the HTML template, nginx configuration or Dockerfile (G1)." },
+    { "practice": "Server-side authorisation reflected, not enforced, in the client", "status": "absent", "notes": "`PermissionGate` in the layout is the only enforcement of the CRM permission model; the API does not check it (C8)." },
+    { "practice": "Automated tests exist", "status": "partial", "notes": "26 test files, up from 15, concentrated on the feature added this cycle — thin against 306 changed files and absent from the security paths (C4)." },
+    { "practice": "Tests and lint enforced before merge", "status": "absent", "notes": "The test stage holds one `allow_failure` Sonar job; no job runs tests, ESLint or an audit (C3)." },
+    { "practice": "Client error reporting", "status": "absent", "notes": "No Sentry, Bugsnag or Rollbar, and no error boundary reporting anywhere — browser failures are invisible (C4)." },
+    { "practice": "Client performance monitoring", "status": "absent", "notes": "No real-user monitoring, Core Web Vitals collection or bundle-size budget (G2)." },
+    { "practice": "Request cancellation on unmount", "status": "partial", "notes": "Correctly implemented in one import modal; absent everywhere else (C5)." },
+    { "practice": "Server-state caching and deduplication", "status": "absent", "notes": "Redux slices only; RTK Query is installed inside Redux Toolkit but unused (C6)." },
+    { "practice": "Maintained build toolchain", "status": "absent", "notes": "Create React App 5.0.0 receives no further releases; React 17, Ant Design 4 and TypeScript 4.6 are each a major version or more behind (C7)." },
+    { "practice": "Accessibility tooling", "status": "partial", "notes": "`eslint-plugin-jsx-a11y` 6.5.1 is installed — new since July — but no conformance target, no runtime testing, and the lint never runs in CI (G3)." },
+    { "practice": "Consistent module structure", "status": "good", "notes": "The feature area added this cycle follows the established `modules/<feature>` convention, with shared components and the storage, axios and store concerns kept separate." }
+  ],
+
+  "architecturalNarrative": "The CRM is the highest-privilege front end in the Novello estate — a session here reaches essentially all candidate, client and financial data — and it is the application with the least between a mistake and a consequence. Three months and 17,000 lines after the first review, the two findings that block release are unchanged, in the same files, on the same lines. That is not for want of engineering effort; the period produced a substantial new feature area, eleven new test files, a correctly implemented request cancellation and accessibility linting. It is because nothing in the delivery pipeline is capable of objecting to anything, so what gets fixed is what someone remembers.\n\nThe security position is best understood as one problem rather than two. React escapes by default, and this application opts out in exactly two places — which is genuinely good discipline across 306 changed files — but it opts out with no sanitiser installed anywhere, and it keeps a thirty-day API token in `localStorage` on the same origin. Either finding alone would be serious and arguable; together they are a complete path from authoring a notification to holding an administrator's session, and the companion server report establishes that such a session reads any candidate's compliance record on 65 role-unrestricted endpoints. There is no CSP to constrain the payload and no error reporting to notice it. The remediation order matters more than the total effort: sanitising is two days and removes the exploitation path, while moving the token needs backend coordination.\n\nThe permissions work added this cycle is the most interesting thing in this refresh, because it is a good feature built on a false assumption. The screen is careful — per-page and per-action toggles, bulk operations, a server-supplied page registry, a guard against editing your own permissions — and `PrivateRoute` carries an honest comment explaining that enforcement moved to a `PermissionGate` in the layout. The assumption is that something behind it also checks. Nothing does. So an administrator withholding invoice access from a colleague has restricted a menu, and the colleague's own token still returns the data. The fix is not here, which is why this report carries the finding and points at the other one.\n\nUnderneath all of it sits an architectural choice that generates work rather than failing outright. Server data is modelled as Redux slices, so every screen answers staleness, deduplication and invalidation by hand — and RTK Query, which exists to answer them, is already installed inside the Redux Toolkit dependency and unused. That is where the refetch-on-every-mount behaviour comes from, and where the uncancelled requests come from, and it is the reason the single correct `AbortController` in the import modal had to be written by hand. The toolchain compounds it: Create React App is unmaintained, which caps React, TypeScript and the component library, and without a dependency audit in CI nobody would learn that a build-chain vulnerability had appeared.",
+
+  "lookingAhead": "Phase 1 is ten days and is almost entirely about the compound risk. Sanitise the two sinks behind one shared component, add a report-only CSP and promote it, move the token out of script reach, and — the item that makes the rest durable — give the pipeline a test and lint job that can actually fail. Of those, the sanitiser is the one to do this week: it is two days, it needs no other team, and it closes the path that turns a stored payload into a stolen session.\n\nPhase 2 is where the architecture changes, and the useful detail is that it costs less than it appears. RTK Query is already in the installed dependency tree, so adopting it is an incremental migration rather than a library decision, and it brings the cancellation work in C5 with it rather than requiring a separate convention. Error reporting is a day's work and is what makes every subsequent change observable. The permissions honesty fix is an hour.\n\nThe modernisation in Phase 3 is deliberately last and should stay there. Nothing about React 17 or Ant Design 4 is broken today; the cost is a widening gap and an unpatchable build chain, and the right trigger for scheduling it is the dependency audit from Phase 1 telling the team something concrete rather than a version comparison. What is worth protecting in the meantime is the discipline this refresh did find: two HTML sinks and no more, tests written with new features, cancellation done properly when it mattered. Those are the habits that will close the remaining findings once the pipeline starts holding the team to them."
+}

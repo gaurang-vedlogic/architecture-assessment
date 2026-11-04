@@ -1,0 +1,14 @@
+{
+  "$comment": "Where `/assess <name>` looks when the argument is not a path. Roots are searched in order, one level deep and then two levels deep, so both 'novello' and 'server' resolve.",
+  "roots": [
+    "D:/repos",
+    "D:/repos/novello"
+  ],
+  "aliases": {
+    "crm": "D:/repos/novello/client-crm",
+    "portal": "D:/repos/novello/client-portal",
+    "mobile": "D:/repos/novello/novello-mobile",
+    "api": "D:/repos/novello/server"
+  },
+  "ignore": ["node_modules", "dist", "build", ".git", ".yalc", "docs", "output"]
+}

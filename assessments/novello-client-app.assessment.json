@@ -1,0 +1,484 @@
+{
+  "meta": {
+    "app": "novello-client-app",
+    "productName": "Novello Candidate Web App",
+    "client": "Novello Healthcare",
+    "org": "Novello",
+    "repository": "gitlab.com/appollo79/client-app",
+    "repoPath": "D:/repos/novello/client-app",
+    "branch": "Alpha/0.0.0.2",
+    "commit": "05ebbfe",
+    "version": "0.1.0",
+    "stack": "React 18 / TypeScript 4.6 · Create React App via craco · Ant Design 4 · Redux Toolkit · Axios · nginx container · GitLab CI and Jenkins",
+    "reviewDate": "2026-10-30",
+    "assessmentType": "Technical Landscape Assessment & Recommendations Report — Refresh",
+    "documentStatus": "CONFIDENTIAL",
+    "scope": "Refresh of the 2026-07-29 assessment, re-reviewing the candidate-facing web application at branch `Alpha/0.0.0.2` (commit 05ebbfe) after 24 commits and +1,193/−158 lines across 35 files. All seven baseline findings and all three capability gaps were re-verified against current code. The change in this period was narrow — AI timesheet review features, notification polish, and a new Dockerfile and nginx configuration for containerised deployment — and the review covered that new delivery surface specifically. Backend behaviour is assessed in `novello-server` and `novello-database`; the internal CRM is assessed in `novello-client-crm`."
+  },
+
+  "verdict": {
+    "prod": "BLOCK_RELEASE",
+    "devTest": "APPROVE_WITH_CONDITIONS",
+    "summary": "Production remains blocked, and unlike the other Novello applications nothing in this one has moved. All seven findings from July survive unchanged, with the same evidence in the same files — including the two that block: the access token is in `localStorage`, and five components render server-supplied strings as HTML with no sanitiser in the project. This is the public-facing application in the estate, reachable by anyone on the internet rather than by internal staff, so the same defects carry more weight here than in the CRM. One detail deserves naming: at the sink in `NotificationsListItem`, the content is passed through `truncateImagesFromHtml`, a regex that strips `<img>` tags. It sits exactly where a sanitiser would sit and does not sanitise — `<script>`, `onerror` handlers and `<iframe>` all pass through untouched. The period's one infrastructure change, a Dockerfile and nginx config added in September, was the natural opportunity to add a Content Security Policy and sets only a `Cache-Control` header.",
+    "blockers": [
+      { "text": "Sanitise all five `dangerouslySetInnerHTML` sites, and remove or rename `truncateImagesFromHtml` so it cannot be mistaken for a security control.", "findingId": "A2" },
+      { "text": "Move the access token out of `localStorage` on this internet-facing origin.", "findingId": "A1" },
+      { "text": "Make the pipeline capable of failing: run the test suite and lint as blocking jobs.", "findingId": "A3" }
+    ]
+  },
+
+  "objective": {
+    "narrative": "To re-establish the state of the candidate-facing web application three months after the initial assessment, verifying which findings have been closed and reviewing the new surface added since. The change in this period was small and concentrated on AI timesheet review and containerised deployment, so the engagement focused on re-testing all seven baseline findings and three capability gaps against current code and on reviewing the new container and nginx configuration.",
+    "metrics": [
+      { "value": "24", "label": "Commits Since Review", "detail": "+1,193 / −158 lines across 35 files" },
+      { "value": "7", "label": "Findings", "detail": "P0=2  P1=4  P2=1" },
+      { "value": "0 of 7", "label": "Baseline Findings Fixed", "detail": "none closed, none improved" },
+      { "value": "49", "label": "Est. Total Effort", "detail": "Man-days across all three phases" }
+    ]
+  },
+
+  "executiveSummary": "This is the only Novello application where the refresh found no movement at all. Every one of the seven findings from July survives with identical evidence: the same token in the same `localStorage` wrapper, the same five unsanitised HTML sinks in the same five components, the same single-job `test` stage that cannot fail, the same four test files, zero request cancellation, the same Redux-only server state, and the same unmaintained build chain. The period's 24 commits delivered AI timesheet review features and a containerised deployment, which is reasonable work — but none of it touched the findings, and nothing in the delivery pipeline would have required it to.\n\nThe security position matters more here than in the companion CRM report for one reason: this application faces the public internet. Candidates reach it from their own devices, so the audience able to interact with it is unbounded rather than limited to internal staff. Against that, the token is held in `localStorage`, readable by any script on the origin, and five components pass API-supplied strings into `dangerouslySetInnerHTML` with no DOMPurify, sanitize-html or equivalent anywhere in the dependency tree. Declaration content, notification bodies and clamped text all render as markup.\n\nOne of those sinks deserves particular attention because it is actively misleading. In `NotificationsListItem.tsx:38` the content is wrapped in `truncateImagesFromHtml` before being assigned to `__html`. That function is four lines: it strips `<img>` tags with a regular expression and removes empty tags. It is a presentational transform for a list preview, and it occupies precisely the position a sanitiser would occupy in the same expression — so a reader scanning for unsafe renders may well conclude this one is handled. It is not: `<script>`, event-handler attributes on any non-image element, `<iframe>` and `<svg onload>` all survive it intact. The adjacent line, 42, renders `notification.inAppText` with no wrapper at all.\n\nThe September containerisation is the period's missed opportunity. The new `Dockerfile` is genuinely well done — it packages an already-built static bundle onto `nginx:alpine`, runs no node at runtime, carries no secrets, and its comments explain both the SPA routing requirement and the division of labour with the build pipeline. The accompanying `nginx.conf` is where a Content Security Policy for this application would naturally live, and it sets a single `Cache-Control` header and nothing else. The CSP gap was recorded as P0 in July precisely because this application is public-facing and has five injection sinks; the file that would carry the fix now exists. That same commit also notes the static bundle is built by a Jenkins pipeline before the image is assembled, so delivery is now split across GitLab CI and Jenkins with the blocking quality gate present in neither.",
+
+  "scorecard": {
+    "targetLabel": "target 3.5 avg",
+    "narrative": "No dimension moves, because nothing was fixed and nothing regressed. Security stays at the floor of 1.0: two P0s, five injection sinks, one of them disguised by a helper that resembles sanitisation, a long-lived token in `localStorage`, and no CSP on an internet-facing origin. Maintainability stays at 2.0 — the test count is unchanged at four files, which is the one metric that moved in the CRM and did not move here. DevOps holds at 2.0: the containerisation is competent work and the pipeline is no more capable of rejecting a change than it was, now across two systems rather than one.",
+    "dimensions": [
+      { "id": "architecture", "label": "Architecture Quality", "current": 3.0, "target": 3.5, "maturity": "Defined", "keyGap": "Module structure is consistent and the AI timesheet review work added this cycle follows it, but server state is modelled as Redux slices rather than cached queries (A6), so fetch orchestration is repeated per screen." },
+      { "id": "security", "label": "Security Posture", "current": 1.0, "target": 4.0, "maturity": "Initial", "keyGap": "Five unsanitised HTML sinks with no sanitiser in the project, one of them wrapped in a helper that only strips images (A2), and the access token in `localStorage` (A1) — on the one application in the estate that faces the public internet, with no CSP (G1)." },
+      { "id": "scalability", "label": "Scalability Readiness", "current": 2.5, "target": 3.5, "maturity": "Developing", "keyGap": "No request cancellation anywhere in the codebase (A5) — zero `AbortController` references — and server state in Redux with no caching or deduplication, so screens refetch on every mount (A6)." },
+      { "id": "maintainability", "label": "Code Maintainability", "current": 2.0, "target": 3.5, "maturity": "Developing", "keyGap": "Four test files, unchanged since July (A4), none running in CI (A3), on an unmaintained Create React App build driven through craco (A7)." },
+      { "id": "observability", "label": "Observability & Monitoring", "current": 1.0, "target": 3.0, "maturity": "Initial", "keyGap": "No client error reporting, no performance monitoring and no release tracking (A4, G2). On a public-facing application this also means no visibility of whether either P0 is being exploited." },
+      { "id": "devops", "label": "DevOps Maturity", "current": 2.0, "target": 3.5, "maturity": "Developing", "keyGap": "The new container packaging is clean, but the `test` stage still holds one `allow_failure` Sonar job (A3), the build is now split across GitLab CI and Jenkins, and the new nginx configuration sets no security headers (G1)." }
+    ]
+  },
+
+  "systemModel": {
+    "purpose": "The candidate-facing web application. Candidates use it to manage their profile and availability, view and accept shifts, submit timesheets — including the AI-assisted timesheet review added this cycle — read notifications, and complete legal declarations and compliance documents. It holds and displays the candidate's own personal data, right-to-work and compliance status, and shift and payment information.",
+    "actors": "Candidates authenticate against the API and receive a JWT, which this application stores in `localStorage`. Because it is a public web application, the set of parties able to load it and interact with its endpoints is unbounded. Content displayed to a candidate — notification bodies, declaration text — originates from the API and is authored elsewhere, principally by internal staff through the CRM, which makes the injection path cross-surface: a payload authored in one application renders in another.",
+    "dataFlows": "The application boots, reads the token from `localStorage` into the Axios instance, and fetches the candidate's profile. Screens dispatch Redux thunks that fetch into slices with no caching layer, so revisiting a screen refetches it and nothing is cancelled on unmount. Notification content, declaration information and clamped text are rendered with `dangerouslySetInnerHTML` straight from the API response — in one case after a regex that removes `<img>` tags. Timesheet uploads are posted to the API, which hands analysis to a worker-initiated AI pipeline; this application polls for the result. The built bundle is produced by Jenkins and packaged by Docker onto nginx for serving.",
+    "invariants": [
+      { "statement": "No server-supplied value is ever interpreted as markup.", "status": "VIOLATED", "findingId": "A2", "note": "Five `dangerouslySetInnerHTML` sites across four components; no sanitiser in the dependency tree." },
+      { "statement": "Where content is transformed before rendering, the transform is a security control or is not mistaken for one.", "status": "VIOLATED", "findingId": "A2", "note": "`truncateImagesFromHtml` strips `<img>` with a regex and nothing else, in the exact position a sanitiser would occupy." },
+      { "statement": "The session credential cannot be read by script running on the page.", "status": "VIOLATED", "findingId": "A1", "note": "`storageAccessToken` is a `localStorage` wrapper, on a public-facing origin with five injection sinks." },
+      { "statement": "An injected script is constrained by a Content Security Policy.", "status": "VIOLATED", "note": "No CSP anywhere, including in the `nginx.conf` added in September, which sets only `Cache-Control` (G1)." },
+      { "statement": "A change cannot reach production without tests and lint passing.", "status": "VIOLATED", "findingId": "A3", "note": "The `test` stage contains only `sonar_beta` with `allow_failure: true`, and the build now also runs through Jenkins with no gate there either." },
+      { "statement": "A failure in a candidate's browser is visible to the team without them reporting it.", "status": "VIOLATED", "findingId": "A4", "note": "No Sentry, Bugsnag or Rollbar package and no reporting error boundary." },
+      { "statement": "Navigating away from a screen cancels the work it started.", "status": "VIOLATED", "findingId": "A5", "note": "Zero `AbortController` or `CancelToken` references in the entire codebase." },
+      { "statement": "The same server data is fetched once and shared, not refetched per mount.", "status": "VIOLATED", "findingId": "A6", "note": "`@reduxjs/toolkit` 1.8.1 is the only state library; no query cache is present, and RTK Query is unused." },
+      { "statement": "The runtime image contains no build tooling or secrets.", "status": "HOLDS", "note": "Verified: the new Dockerfile copies a pre-built `build/` directory onto `nginx:alpine` and runs no node at runtime. Recorded under positive posture." },
+      { "statement": "The build toolchain receives security updates.", "status": "VIOLATED", "findingId": "A7", "note": "`react-scripts` 5.0.0 behind `@craco/craco` 6.4.3 — Create React App is unmaintained — with Ant Design 4 and TypeScript 4.6." }
+    ]
+  },
+
+  "threatModel": "This is the public-facing application, so the relevant attacker is anyone on the internet with a candidate account, and the relevant payload may not even originate with them. Content rendered here is authored elsewhere — notification bodies and declaration text come from the API and largely from internal staff using the CRM — so the injection path crosses surfaces: a payload stored through an authoring interface renders as markup in a candidate's browser, or in another candidate's. Five sinks exist, no sanitiser is installed, and no CSP constrains what an injected script may do or where it may send data. The token it would read sits in `localStorage` on the same origin and, per the companion server report, is valid for thirty days with no revocation mechanism and is accepted on 65 role-unrestricted API endpoints — including the candidate-read paths that return any other candidate's compliance record. With no client error reporting, none of this produces a signal the team would see.",
+
+  "coverage": {
+    "method": "Refresh review, baseline-differential. All seven findings and all three capability gaps from the 2026-07-29 assessment were re-tested against the current tree, and the new container and nginx configuration added in September was reviewed. Static review only: no browser session, no runtime profiling, no penetration testing, and the test suite was not executed.",
+    "size": "24 commits since baseline commit b2e6bb7, +1,193/−158 lines across 35 files, measured with `git diff --stat` excluding lockfiles. Four test files, unchanged from the baseline commit.",
+    "deepRead": [
+      "src/utils/storage/storageService.ts and storageVariables.ts — the token storage mechanism",
+      "src/utils/htmlConverters.ts — in full, including `truncateImagesFromHtml`",
+      "src/components/Notifications/NotificationsListItem.tsx — both sinks, lines 38 and 42",
+      "src/components/Notifications/NotificationDetailsModal.tsx — the notification content sink",
+      "src/components/Clamp/Clamp.tsx — the shared clamped-text sink",
+      "src/modules/legal/components/DeclarationInfoAndDocuments/DeclarationInfoAndDocuments.tsx — the declaration sink",
+      "Dockerfile and nginx.conf — in full, both added this cycle",
+      ".gitlab-ci.yml — stage and job structure",
+      "package.json — dependency versions and the absence of a sanitiser, error reporter and query cache"
+    ],
+    "grepSwept": [
+      "`dangerouslySetInnerHTML` across all of `src/` — five sites, matching the baseline count and locations",
+      "`dompurify` / `sanitize-html` / `xss` in package.json — none present",
+      "sanitisation-shaped helper names (`sanitize`, `clean`, `purify`) across `src/` — none; the only transform is `truncateImagesFromHtml`",
+      "`localStorage` usage and the storage service's backing store",
+      "`sentry` / `bugsnag` / `rollbar` in package.json — none present",
+      "`AbortController` / `CancelToken` across `src/` — zero occurrences",
+      "`add_header` / `Content-Security-Policy` / `X-Frame-Options` in nginx.conf — only `Cache-Control`",
+      "state and toolchain versions in package.json",
+      "test and spec file counts at HEAD versus the baseline commit"
+    ],
+    "notRead": [
+      "`node_modules/` — no dependency audit was run",
+      "The AI timesheet review feature's logic, which is the bulk of the 35 changed files — reviewed for new injection sinks and token handling, not for functional correctness",
+      "The four test files' contents; they were counted, not evaluated, and the suite was not executed",
+      "The Jenkins pipeline definition, which is not in this repository — its existence is inferred from the Dockerfile's comments, so whether it carries any quality gate is unknown",
+      "Runtime behaviour: no browser session, so bundle size, render performance and actual refetch volume were not measured",
+      "The backend API and the CRM, assessed in their own reports"
+    ],
+    "caveats": [
+      "A1 and A2 are a compound risk and the severity of each depends on the other, as in the companion CRM report. The difference here is exposure: this origin is public, so the population that can interact with the application is unbounded. The remediation order in the findings reflects that A2 is both cheaper and the active path.",
+      "No payload was planted and executed, so A2 is Confirmed on the code path — five unsanitised server strings rendered as markup with no sanitiser present — rather than on a demonstrated exploit. Which authoring surfaces reach each of the five sinks was not exhaustively traced; notification content and declaration text clearly do.",
+      "The claim that delivery is split across GitLab CI and Jenkins rests on the Dockerfile's own comments, which state the `build/` directory is produced by a Jenkins pipeline beforehand. That pipeline is not in this repository, so whether it runs tests or lint could not be verified — if it does, part of A3 is already addressed in a place this review cannot see, and that should be confirmed with the team.",
+      "A6's practical cost — how much redundant fetching actually occurs — was not measured, since that needs a browser session. The finding rests on the absence of a cache library rather than on observed request volume.",
+      "A7 reads declared versions from `package.json`. Whether any currently-known vulnerability affects the installed tree was not established, because no dependency audit was run; that is part of what the missing audit job in A3 would provide.",
+      "The test count is identical to the baseline at four files. That is a measured fact, not an inference, but it does not establish whether those four tests still pass — the suite was not run."
+    ]
+  },
+
+  "findings": [
+    {
+      "id": "A2",
+      "title": "Five unsanitised HTML sinks, one of them wrapped in a helper that resembles sanitisation",
+      "ruleId": "SEC-013",
+      "group": "Input Handling",
+      "layer": "Frontend",
+      "dimension": "security",
+      "riskDimension": "Security",
+      "criticality": "High",
+      "priority": "P0",
+      "phase": 1,
+      "gate": "blocks-prod",
+      "confidence": "Confirmed",
+      "instances": 5,
+      "claim": "Four components pass API-supplied strings into `dangerouslySetInnerHTML` across five sites with no sanitiser anywhere in the project, and at one of them the content is wrapped in `truncateImagesFromHtml` — a four-line regex that strips `<img>` tags and nothing else, occupying the position a sanitiser would occupy.",
+      "evidence": [
+        { "file": "src/components/Notifications/NotificationsListItem.tsx", "line": 38, "snippet": "dangerouslySetInnerHTML={{__html: truncateImagesFromHtml(notification.payload.content)}}", "note": "The misleading one. A reader scanning for unsafe renders sees a transform applied and may reasonably assume it is the sanitising step." },
+        { "file": "src/utils/htmlConverters.ts", "line": 6, "snippet": "export const truncateImagesFromHtml = (htmlContent: string) => {\n  const imgRegex = /<img[^>]+>/g\n  const contentWithoutImages = htmlContent.replace(imgRegex, '')\n  return truncateEmptyTagsFromHtml(contentWithoutImages)\n}", "note": "The whole function. It removes image tags for a list preview. `<script>`, event-handler attributes on any other element, `<iframe>` and `<svg onload>` all pass through unchanged." },
+        { "file": "src/components/Notifications/NotificationsListItem.tsx", "line": 42, "snippet": "<p className=\"notification-item__content\" dangerouslySetInnerHTML={{__html: notification.inAppText}} />", "note": "Four lines below, the same component renders a second field with no wrapper at all — so even the partial transform is not applied consistently." },
+        { "file": "src/components/Notifications/NotificationDetailsModal.tsx", "line": 34, "note": "The full notification body, unwrapped. `src/components/Clamp/Clamp.tsx:36` is the shared clamped-text component, inherited by every caller, and `src/modules/legal/components/DeclarationInfoAndDocuments/DeclarationInfoAndDocuments.tsx:17` renders declaration text." },
+        { "file": "package.json", "note": "No `dompurify`, `sanitize-html` or `xss` dependency, and no helper named `sanitize`, `clean` or `purify` anywhere in `src/` — so nothing in this project sanitises HTML at all." }
+      ],
+      "reasoning": "React escapes by default and this application opts out five times with nothing to make that safe. The content is authored elsewhere — notification bodies and declaration text arrive from the API, largely written by internal staff through the CRM — so this is a cross-surface stored-payload path ending in a candidate's browser on a public origin. `Clamp` is the most difficult to bound because it is generic: any screen that clamps a server string is a sink. And `truncateImagesFromHtml` is worth calling out separately because its effect on a reviewer is the opposite of its effect on an attacker: it provides no protection while providing reassurance.",
+      "reproduction": "Author a notification whose rich-text body contains an `onerror` attribute on a non-image element, or an `<iframe>`, and open the notifications list as a candidate. The regex removes no part of the payload and the markup renders, at which point `localStorage.getItem('accessToken')` (A1) is readable by the injected script.",
+      "impact": "Restores React's default escaping guarantee across every render site on the public-facing application, and removes a helper that currently makes an unsafe render look handled.",
+      "refutation": "Checked whether the API sanitises on write, which would make client rendering safe — the companion server report found no sanitisation middleware and a broad set of write-capable endpoints, so server-side cleaning cannot be assumed. Checked whether `truncateImagesFromHtml` does more than its name suggests, in case it was an unconventionally named sanitiser: it does not; the function is four lines and only removes `<img>` tags and empty tags. Checked whether a CSP limits the consequence: none exists anywhere, including in the nginx configuration added this cycle. Survives unchanged from July.",
+      "remediation": "Add DOMPurify and route all five sites through one shared `SafeHtml` component so sanitisation happens in a single place and any future sink inherits it. Keep `truncateImagesFromHtml` only as a presentational step applied *after* sanitisation, and rename it so it cannot be read as a security control — or drop it in favour of CSS truncation. Then add a CI grep rejecting any new raw `dangerouslySetInnerHTML`, which is the control that stops the count growing again.",
+      "sampleFix": "// One component owns __html; the transform is presentational, applied after.\nimport DOMPurify from 'dompurify'\n\nexport const SafeHtml = ({html, transform, ...rest}: Props) => {\n  const clean = DOMPurify.sanitize(html ?? '')\n  return <div {...rest} dangerouslySetInnerHTML={{__html: transform ? transform(clean) : clean}} />\n}",
+      "effortDays": 3,
+      "role": "Frontend Engineer"
+    },
+    {
+      "id": "A1",
+      "title": "The access token is stored in `localStorage` on the public-facing application",
+      "ruleId": "SEC-003",
+      "group": "Authentication & Session",
+      "layer": "Frontend",
+      "dimension": "security",
+      "riskDimension": "Security",
+      "criticality": "High",
+      "priority": "P0",
+      "phase": 1,
+      "gate": "blocks-prod",
+      "confidence": "Confirmed",
+      "claim": "`storageAccessToken` is built on a `localStorage` wrapper, so the API token is readable by any script on the origin — on the one application in the estate exposed to the public internet, and the one with five injection sinks. Unchanged since July.",
+      "evidence": [
+        { "file": "src/utils/storage/storageService.ts", "line": 12, "snippet": "has: () => !!localStorage.getItem(name),\nget: () => tryJsonParse(localStorage.getItem(name)),\nset: (val: unknown) => localStorage.setItem(name, JSON.stringify(val)),", "note": "`localStorage` unconditionally; there is no session or cookie variant of the service." },
+        { "file": "src/utils/storage/storageVariables.ts", "line": 3, "snippet": "export const storageAccessToken = storageService('accessToken')", "note": "The token uses that service directly." },
+        { "file": "src/libs/axios.ts", "line": 11, "note": "The Axios instance reads the token from that store and attaches it to every request, so a stolen value is immediately usable against the API." }
+      ],
+      "reasoning": "`localStorage` offers no protection against script access by design. That is a trade-off many applications accept, and it is not acceptable here for two compounding reasons: A2 supplies the script from within the same codebase, and the companion server report establishes that the token is valid for thirty days, cannot be revoked, and is accepted on 65 role-unrestricted endpoints — including the ones that return any candidate's compliance record. A single stolen candidate token therefore reaches well beyond that candidate's own data.",
+      "impact": "Removes the session credential from the reach of page scripts on the internet-facing origin, so an injected payload can no longer be escalated into a durable API session.",
+      "refutation": "Checked whether a shorter token lifetime bounds the damage — the companion report found a 30-day TTL with no revocation path, so it does not. Checked for parallel cookie-based authentication in the Axios configuration: none. Checked whether `sessionStorage` would be a cheap mitigation: it would not, since it is equally script-readable and differs only in lifetime. Survives unchanged.",
+      "remediation": "Close A2 first — it is the active path and cheaper. Then hold the access token in memory only, with a refresh token in an HttpOnly, Secure, SameSite cookie issued by the API so a page reload re-authenticates without a readable long-lived credential. That is a coordinated backend change, so raise it with the server team alongside the token-revocation work their own report recommends.",
+      "effortDays": 3,
+      "role": "Frontend Engineer"
+    },
+    {
+      "id": "A3",
+      "title": "The pipeline cannot fail a change, and delivery is now split across two systems",
+      "ruleId": "DVO-002",
+      "group": "Delivery",
+      "layer": "Infrastructure",
+      "dimension": "devops",
+      "riskDimension": "Reliability",
+      "criticality": "Medium",
+      "priority": "P1",
+      "phase": 1,
+      "gate": "blocks-prod",
+      "confidence": "Needs-runtime-check",
+      "claim": "The GitLab `test` stage contains only `sonar_beta` with `allow_failure: true` and no job runs the test suite or lint — and the Dockerfile added this cycle records that the bundle is built by a separate Jenkins pipeline, which is not in this repository and whose gates cannot be verified from it.",
+      "evidence": [
+        { "file": ".gitlab-ci.yml", "line": 8, "snippet": "sonar_beta:\n  stage: test\n  ...\n  allow_failure: true", "note": "The whole of the test stage, and advisory by definition." },
+        { "file": "Dockerfile", "line": 7, "snippet": "# The static build/ folder is produced by the Jenkins pipeline BEFORE this\n# image is built (npm run build runs on the Jenkins agent, same as the\n# existing GitLab CI does) — Docker here only packages the already-built\n# static assets, it does not run node/npm at all.", "note": "Delivery now spans GitLab CI and Jenkins. The comment is helpfully explicit, but the Jenkins definition is not in this repository." },
+        { "file": "package.json", "note": "Four test files exist and no job in the visible pipeline invokes them, nor ESLint, nor a dependency audit." }
+      ],
+      "reasoning": "This is the finding that explains why nothing else in this report moved. Twenty-four commits landed in three months and the pipeline was incapable of objecting to any of them — and the quality gate is now absent from two systems rather than one. The split also creates a question nobody reading this repository can answer: which pipeline is authoritative for a production build, and does either run a test. Confidence is `Needs-runtime-check` for exactly that reason; the GitLab half is certain.",
+      "impact": "Gives delivery the ability to reject a change, which is the precondition for the Phase 1 security fixes staying fixed, and resolves which of the two pipelines owns that responsibility.",
+      "refutation": "Checked for a pre-commit hook enforcing tests locally — no `.husky` directory or equivalent in this repository. Checked whether Sonar's quality gate could block despite the flag — `allow_failure: true` is the instruction not to block. Could not check the Jenkins pipeline, which is why this is reported as needing confirmation rather than as a flat absence. Gated as blocks-prod because the Phase 1 fixes would otherwise ship unverified.",
+      "remediation": "First establish which pipeline builds production and whether it runs anything — if Jenkins already runs tests, part of this is done and the finding narrows to the GitLab side. Then add a blocking job running the test suite, ESLint and `npm audit --audit-level=high` to whichever pipeline gates merges, make it required in branch protection, and run the four existing tests first to confirm they pass before making them blocking.",
+      "effortDays": 3,
+      "role": "DevOps Engineer"
+    },
+    {
+      "id": "A4",
+      "title": "Four test files, unchanged since July, and no client error reporting",
+      "ruleId": "TST-003",
+      "group": "Quality Assurance",
+      "layer": "Frontend",
+      "dimension": "observability",
+      "riskDimension": "Maintainability",
+      "criticality": "Medium",
+      "priority": "P1",
+      "phase": 2,
+      "gate": "warning",
+      "confidence": "Confirmed",
+      "claim": "The application has four test files, exactly as many as at the baseline commit, and no error-reporting client — so a failure in a candidate's browser is invisible unless they report it.",
+      "evidence": [
+        { "file": "package.json", "note": "No `@sentry/react`, `bugsnag` or `rollbar` dependency. The companion server report confirms Sentry is wired on the backend, so the platform sees server errors and nothing from any browser." },
+        { "file": "src/utils/validators.test.ts", "note": "One of the four, and touched this cycle by a commit titled 'fix: Update stale AvailabilityActions and validators tests' — so the existing tests were maintained rather than extended." },
+        { "file": "src", "note": "Four `.test.`/`.spec.` files at HEAD and four at the baseline commit b2e6bb7, counted with `git ls-tree`. The AI timesheet review feature added this cycle arrived without tests." },
+        { "file": ".gitlab-ci.yml", "line": 8, "note": "And nothing runs them (A3), so even the four provide no protection at merge." }
+      ],
+      "reasoning": "Two absences with one effect: nobody finds out when this application breaks. The contrast with the companion CRM report is instructive — there, test files grew from 15 to 26 over the same period, so the practice exists in the organisation and did not reach this repository. For a public-facing application the missing error reporting is the more serious half: there is no signal that would reveal either P0 being exploited, and no way to distinguish a candidate having trouble from a systematic failure.",
+      "impact": "Makes failures on the candidate-facing application visible without a user reporting them, and puts a regression net under the Phase 1 security fixes.",
+      "refutation": "Checked for an error boundary reporting to a backend — none found; an uncaught exception ends at the console. Checked whether the four tests cover security-relevant paths: they cover validators and availability actions, not token handling or HTML rendering, so the Phase 1 fixes have nothing to build on. Checked whether the commit touching the tests added any: it updated stale ones, leaving the count unchanged.",
+      "remediation": "Add an error-reporting client with release tracking and source maps, plus a route-level error boundary so a render failure reports rather than blanking the page — a day's work and immediately useful on a public application. Then write tests as part of the Phase 1 changes: that the token is never written to `localStorage`, and that `SafeHtml` strips a script payload while `truncateImagesFromHtml` is no longer trusted to.",
+      "effortDays": 8,
+      "role": "Frontend Engineer"
+    },
+    {
+      "id": "A5",
+      "title": "No request cancellation anywhere in the codebase",
+      "ruleId": "PERF-011",
+      "group": "Performance",
+      "layer": "Frontend",
+      "dimension": "scalability",
+      "riskDimension": "Performance",
+      "criticality": "Medium",
+      "priority": "P1",
+      "phase": 2,
+      "gate": "warning",
+      "confidence": "Confirmed",
+      "claim": "A sweep of the entire source tree for `AbortController`, `AbortSignal` and `CancelToken` returns zero occurrences, so every request continues after the component that issued it unmounts.",
+      "evidence": [
+        { "file": "src", "note": "Zero matches for any cancellation primitive — unlike the companion CRM, which has one correct `AbortController` in an import modal. There is no in-house reference implementation here to copy." },
+        { "file": "src/libs/axios.ts", "note": "The shared instance exposes no cancellation convention, so each consumer would have to plumb a signal through by hand." },
+        { "file": "src/utils/storage/storageVariables.ts", "note": "Redux thunks dispatch fetches per screen and their fulfilled actions update slices unconditionally, so a late response from an abandoned screen still writes to state." }
+      ],
+      "reasoning": "Two consequences. The visible one is a stale-data race: on a mobile connection, navigating between screens that write to the same slice can let a slower earlier request land after a faster later one, displaying stale data with no error. The invisible one is wasted server work — the API and database complete requests whose results are discarded, which the companion reports show is expensive against unindexed legacy collections. Candidates use this application on phones and variable connections, which makes the race more likely here than in the internal CRM.",
+      "impact": "Eliminates a class of stale-data race on screen transitions and stops the API doing work whose result is thrown away.",
+      "refutation": "Checked whether Redux Toolkit's `createAsyncThunk` signal is used — the thunks do not pass the thunk API's `signal` to Axios, so the built-in support is available and unused. Checked whether a query cache handles it implicitly: none is present (A6). Survives unchanged, and with no partial adoption at all.",
+      "remediation": "Largely subsumed by A6 — adopting RTK Query, already installed inside Redux Toolkit, provides cancellation, deduplication and staleness handling together, which is why both sit in the same phase. If A6 is deferred, add a `useAbortableRequest` hook wrapping the Axios signal and apply it to the list and detail thunks.",
+      "effortDays": 4,
+      "role": "Frontend Engineer"
+    },
+    {
+      "id": "A6",
+      "title": "Server state is held in Redux with no caching or deduplication",
+      "ruleId": "PERF-010",
+      "group": "Architecture",
+      "layer": "Frontend",
+      "dimension": "scalability",
+      "riskDimension": "Performance",
+      "criticality": "Medium",
+      "priority": "P1",
+      "phase": 2,
+      "gate": "warning",
+      "confidence": "Confirmed",
+      "claim": "`@reduxjs/toolkit` 1.8.1 is the only state library and no `createApi` usage exists, so every screen refetches on mount, concurrent requests for the same resource are not deduplicated, and invalidation after a mutation is hand-written per slice.",
+      "evidence": [
+        { "file": "package.json", "line": 10, "snippet": "\"@reduxjs/toolkit\": \"^1.8.1\",", "note": "RTK Query ships inside this package, so the capability is installed and unused — adoption is an incremental migration rather than a new dependency decision." },
+        { "file": "package.json", "note": "No `@tanstack/react-query`, `react-query` or `swr` in the dependency tree." },
+        { "file": "src", "note": "Slices hold fetched entities with per-slice loading and error flags, which is where the refetch-on-mount behaviour and the A5 races both originate." }
+      ],
+      "reasoning": "Modelling server data as client state makes every consumer answer questions a cache would answer for it — staleness, in-flight deduplication, post-mutation invalidation — and doing that by hand per slice is the root of two other findings here. Nothing is broken, which is why this is an architecture finding rather than a defect, but it sets the marginal cost of every new screen and is the reason the AI timesheet review work this cycle had to hand-roll its polling.",
+      "impact": "Cuts redundant API traffic from candidate devices and removes hand-written cache invalidation from every slice, while supplying the request cancellation A5 lacks.",
+      "refutation": "Checked for existing `createApi` usage that would make this a partial migration — none found. Checked whether the refetch cost is material: not measured, since that needs a browser session, so the finding rests on the architecture rather than on observed request volume and is held at P1 rather than raised.",
+      "remediation": "Adopt RTK Query from the already-installed Redux Toolkit. Migrate the highest-traffic read screens first — shifts and notifications — and take A5 with it. Leave genuine client state such as filters and modal visibility in slices; only server data moves.",
+      "effortDays": 8,
+      "role": "Frontend Engineer"
+    },
+    {
+      "id": "A7",
+      "title": "Unmaintained build toolchain and dated dependencies",
+      "ruleId": "DEP-003",
+      "group": "Dependencies",
+      "layer": "Frontend",
+      "dimension": "maintainability",
+      "riskDimension": "Maintainability",
+      "criticality": "Medium",
+      "priority": "P2",
+      "phase": 3,
+      "gate": "clear",
+      "confidence": "Confirmed",
+      "claim": "The build runs `react-scripts` 5.0.0 through `@craco/craco` 6.4.3 — Create React App, no longer maintained, with a wrapper that exists only to configure it — alongside Ant Design 4 and TypeScript 4.6. Unchanged since July.",
+      "evidence": [
+        { "file": "package.json", "line": 27, "snippet": "\"react-scripts\": \"5.0.0\",", "note": "Create React App receives no further releases, so build-chain vulnerabilities have no upstream patch path." },
+        { "file": "package.json", "line": 8, "snippet": "\"@craco/craco\": \"^6.4.3\",", "note": "A wrapper whose entire purpose is to override CRA's configuration — itself tied to CRA's lifecycle, so the two must be replaced together." },
+        { "file": "package.json", "line": 11, "snippet": "\"antd\": \"^4.20.6\",", "note": "Ant Design 4 against 5 current — the largest UI dependency and the bulk of any upgrade." },
+        { "file": "package.json", "line": 19, "note": "React 18, which is a point in this application's favour — the companion CRM is still on 17, so this repository is one major version ahead there." }
+      ],
+      "reasoning": "Nothing is broken today, hence P2. The cost compounds: an unmaintained build system means no security patches to the build chain and a widening gap to the ecosystem, and the craco wrapper means the migration is a single combined step rather than two independent ones. It interacts with A3 — with no dependency audit running anywhere, a vulnerability in this tree would go unnoticed, and the fix for it might be the migration that keeps being deferred.",
+      "impact": "Returns the application to a maintained build chain with a supported upgrade path, so dependency vulnerabilities can be patched rather than worked around.",
+      "refutation": "Checked whether a Vite migration is underway — no Vite configuration exists, so this is not a partial move. Checked whether any currently-known vulnerability affects the installed tree, which would raise the priority: not established, as no audit was run. Noted in mitigation that React is already at 18 here, so this application is better placed than the CRM on the largest dependency.",
+      "remediation": "Replace craco and `react-scripts` with Vite in one step — the craco configuration maps onto Vite config and the result is a faster build and test cycle. Then move Ant Design 4 to 5, after A6 has settled, since a query migration touches many of the same components. Land the dependency audit from A3 first so the sequence is driven by known exposure.",
+      "effortDays": 10,
+      "role": "Frontend Engineer"
+    }
+  ],
+
+  "gaps": [
+    {
+      "capability": "Content Security Policy",
+      "area": "Security",
+      "status": "missing",
+      "why": "Re-verified, and the position has changed in one important way: a Dockerfile and `nginx.conf` were added in September, so the file that would naturally carry a CSP for this application now exists — and it sets a single `Cache-Control` header and nothing else. This is the public-facing application with five injection sinks (A2) and a readable token (A1), so a CSP restricting inline script execution and connect destinations is the control that would contain a payload even if one renders. It was recorded as P0 in July for that reason and remains so.",
+      "recommendation": "Add the policy to `nginx.conf` alongside the other security headers it should carry — `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`. Start `Content-Security-Policy-Report-Only` so existing inline usage surfaces without breaking candidates, then enforce. Restrict `script-src` to self without `unsafe-inline` and `connect-src` to the API origin, so an injected script cannot exfiltrate the token to an arbitrary host.",
+      "priority": "P0",
+      "phase": 1,
+      "effortDays": 2,
+      "role": "DevOps Engineer",
+      "layer": "Frontend"
+    },
+    {
+      "capability": "Client error and performance monitoring",
+      "area": "Observability",
+      "status": "missing",
+      "why": "Re-verified: no error reporting (covered as the second half of A4), and no real-user monitoring, Core Web Vitals collection or bundle-size budget. Candidates use this application on their own phones over variable connections, so the performance characteristics that matter most are precisely the ones nobody measures — and A6's refetch-on-every-mount behaviour is unquantified for the same reason.",
+      "recommendation": "Collect Core Web Vitals and route-level timings from real sessions, and add a bundle-size budget to the build. Sequence after A7's Vite migration, since that changes the bundle shape and a budget set against the CRA output would need resetting immediately.",
+      "priority": "P1",
+      "phase": 3,
+      "effortDays": 3,
+      "role": "Frontend Engineer",
+      "layer": "Frontend"
+    },
+    {
+      "capability": "Accessibility conformance",
+      "area": "User Experience",
+      "status": "missing",
+      "why": "Re-verified and still absent — note this differs from the companion CRM, which has since added `eslint-plugin-jsx-a11y`; that has not reached this repository. No accessibility lint plugin, no stated conformance target and no runtime testing. This is the candidate-facing application, used by a general public population on their own devices, so the audience is far more likely to include assistive-technology users than the internal CRM's is, and the exposure is correspondingly higher.",
+      "recommendation": "Add `eslint-plugin-jsx-a11y` with rules as errors — matching what the CRM already has — and get it running via the A3 lint job. State a conformance target, WCAG 2.1 AA being the usual baseline for a public service, then add automated axe checks for the shift, timesheet and declaration journeys.",
+      "priority": "P2",
+      "phase": 3,
+      "effortDays": 5,
+      "role": "Frontend Engineer",
+      "layer": "Frontend"
+    }
+  ],
+
+  "refutedCandidates": [
+    {
+      "claim": "`truncateImagesFromHtml` is a sanitiser, so the notification list render is safe.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "Read the function in full. It is four lines: a `/<img[^>]+>/g` replace followed by an empty-tag cleanup. It removes image tags for a list preview and performs no sanitisation of any other element or attribute — `<script>`, `onerror` on a non-image element, `<iframe>` and `<svg onload>` all pass through unchanged. This refutation is the finding: the helper provides reassurance without protection, which is why A2 calls it out separately rather than simply counting five sinks."
+    },
+    {
+      "claim": "The number of unsanitised HTML sinks has grown since July.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "Five sites were recorded in July and five exist now, across the same four components. Thirty-five files changed in the period and no new sink was introduced. The finding survives on severity, not on spread."
+    },
+    {
+      "claim": "The new Dockerfile introduces a security weakness — secrets or build tooling in the runtime image.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "Read it in full. It is `FROM nginx:alpine`, copies `nginx.conf` and a pre-built `build/` directory, exposes 80, and runs no node or npm at runtime — so there is no build tooling, no package manager and no `.env` in the image. The companion server report found the opposite pattern in that repository (`.env` copied into the runtime stage), which makes this a deliberate contrast worth recording under positive posture. The missed opportunity is the absent CSP in the accompanying `nginx.conf`, recorded as G1, not anything the Dockerfile does."
+    },
+    {
+      "claim": "The application has no CI quality gate at all.",
+      "verdict": "Downgraded",
+      "step": 3,
+      "reasoning": "The GitLab half is certain — one `allow_failure` Sonar job and nothing else. But the Dockerfile's comments record that the production bundle is built by a Jenkins pipeline that is not in this repository, so whether a gate exists there cannot be determined from the code. A3 is therefore reported at `Needs-runtime-check` with the Jenkins question as its first remediation step, rather than as a flat absence."
+    },
+    {
+      "claim": "React 18 means this application is on a current toolchain.",
+      "verdict": "Refuted",
+      "step": 3,
+      "reasoning": "React itself is reasonably current and ahead of the companion CRM, which is still on 17 — but the build system is not React. `react-scripts` 5.0.0 behind `@craco/craco` 6.4.3 is Create React App with a configuration wrapper, and CRA is unmaintained, so the build chain has no patch path regardless of the React version. Recorded as A7 with the React 18 position noted in mitigation."
+    },
+    {
+      "claim": "Moving the token to `sessionStorage` would mitigate A1 cheaply.",
+      "verdict": "Refuted",
+      "step": 3,
+      "reasoning": "`sessionStorage` is equally readable by any script on the origin and differs only in lifetime, so it would not blunt an A2 payload at all. The remediation for A1 therefore proposes in-memory storage with an HttpOnly refresh cookie, which actually removes the credential from script reach — at the cost of needing a coordinated backend change."
+    },
+    {
+      "claim": "RTK Query would be a new dependency, making the A6 remediation a larger decision than estimated.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "It ships inside `@reduxjs/toolkit`, already installed at ^1.8.1, and a search found no `createApi` usage — so the capability is present and unused. A6 and A5 are therefore an incremental migration within an existing dependency rather than a library evaluation, which is what the estimates reflect."
+    }
+  ],
+
+  "positivePosture": [
+    {
+      "title": "The new container image is built the way it should be",
+      "detail": "The September Dockerfile packages a pre-built static bundle onto `nginx:alpine`, runs no node or npm at runtime, and contains no environment file or secret — a direct contrast with the companion server report, where `.env` is copied into the production image. Its comments explain both why the nginx SPA routing rule is needed and that the build happens on the pipeline agent rather than in the image. Clean, minimal and documented."
+    },
+    {
+      "title": "The injection surface did not grow",
+      "detail": "Five `dangerouslySetInnerHTML` sites in July and five now, across the same four components, with 35 files changed in between. The AI timesheet review feature was built without reaching for the escape hatch, so the default discipline in new code is sound — the finding is a missing sanitiser at known sinks rather than a spreading habit."
+    },
+    {
+      "title": "React is a major version ahead of the sibling application",
+      "detail": "This application runs React 18 where the companion CRM is still on 17. On the dependency that is hardest to move and most consequential for the ecosystem, this repository is in the better position, which meaningfully reduces the scope of its A7 migration relative to the CRM's."
+    },
+    {
+      "title": "Existing tests were maintained rather than left to rot",
+      "detail": "A commit this cycle — \"fix: Update stale AvailabilityActions and validators tests\" — brought the existing tests back in line with changed code rather than deleting or skipping them. Four tests kept green is a small thing, but choosing to repair them when they broke is the habit that makes a larger suite viable later."
+    },
+    {
+      "title": "The AI timesheet work moved orchestration to the server",
+      "detail": "Two commits this cycle — \"Stop driving AI timesheet analysis from the client\" and \"Flag timesheet AI processing as worker-initiated\" — moved responsibility for the analysis pipeline out of the browser and into server-side workers, and added duplicate-upload prevention alongside. That is the right direction architecturally: the client polls for a result rather than driving a multi-step process it cannot guarantee completing."
+    }
+  ],
+
+  "inventory": [
+    { "item": "Application", "value": "Novello Candidate Web App — public-facing candidate portal" },
+    { "item": "Branch / commit", "value": "Alpha/0.0.0.2 @ 05ebbfe (2026-09-16)" },
+    { "item": "Change since last review", "value": "24 commits, +1,193 / −158 lines across 35 files" },
+    { "item": "Framework", "value": "React 18 / TypeScript 4.6 on Create React App via craco" },
+    { "item": "UI library", "value": "Ant Design 4.20" },
+    { "item": "State management", "value": "Redux Toolkit 1.8 — slices only, RTK Query installed but unused" },
+    { "item": "Session storage", "value": "localStorage — accessToken" },
+    { "item": "Unsanitised HTML sinks", "value": "5 across 4 components; one wrapped in an image-stripping regex; no sanitiser in the project" },
+    { "item": "Request cancellation", "value": "None — zero AbortController or CancelToken references" },
+    { "item": "Automated tests", "value": "4 test files — unchanged since July; not run by CI" },
+    { "item": "Error reporting", "value": "None" },
+    { "item": "Delivery", "value": "GitLab CI (one allow_failure Sonar job) plus a Jenkins build; new nginx container with no security headers" },
+    { "item": "Baseline findings resolved", "value": "0 of 7 — none closed, none improved" }
+  ],
+
+  "releaseGates": [
+    { "gate": "Cross-site scripting", "findingRefs": ["A2"], "devTest": "Warning", "prod": "Blocks", "status": "Open", "note": "Five unsanitised sinks, no sanitiser in the project, and one sink wrapped in a helper that resembles sanitisation and is not. Blocks on the public-facing application." },
+    { "gate": "Session credential protection", "findingRefs": ["A1"], "devTest": "Warning", "prod": "Blocks", "status": "Open", "note": "A 30-day non-revocable token in `localStorage` on the same origin as five injection sinks, accepted by the API on 65 role-unrestricted endpoints per the companion server report." },
+    { "gate": "Content Security Policy", "findingRefs": [], "devTest": "Warning", "prod": "Blocks", "status": "Open", "note": "No CSP (G1), and the `nginx.conf` added in September — the natural home for one — sets only `Cache-Control`. Blocks because it is the control that would contain an A2 payload on a public origin." },
+    { "gate": "Pre-merge quality gate", "findingRefs": ["A3"], "devTest": "Warning", "prod": "Blocks", "status": "Needs-runtime-check", "note": "The GitLab test stage cannot fail. A separate Jenkins pipeline builds production and is not in this repository, so whether any gate exists there must be confirmed before this can be scored." },
+    { "gate": "Production error visibility", "findingRefs": ["A4"], "devTest": "Clear", "prod": "Warning", "status": "Open", "note": "No client error reporting, so neither P0 being exploited would produce a signal, and a candidate-facing failure is known only if reported." },
+    { "gate": "Runtime image hygiene", "findingRefs": [], "devTest": "Clear", "prod": "Clear", "status": "Pass", "note": "Verified: the new image carries a static bundle on nginx with no node runtime, no package manager and no environment file." },
+    { "gate": "Supported toolchain", "findingRefs": ["A7"], "devTest": "Clear", "prod": "Warning", "status": "Open", "note": "Create React App via craco is unmaintained, so build-chain vulnerabilities have no patch path. React 18 limits the exposure relative to the sibling CRM." }
+  ],
+
+  "phases": [
+    { "number": 1, "name": "Stabilisation & Risk Mitigation", "objective": "Close the injection path and contain what it could reach, on the application where the audience is unbounded. Sanitise all five sinks behind one component and retire the misleading helper; add the CSP and the other security headers to the nginx configuration that now exists; move the token out of script reach; and settle which pipeline gates production so the fixes are verified. Eleven days." },
+    { "number": 2, "name": "Architecture & Observability", "objective": "Give the application a cache and a voice. Adopt the RTK Query already sitting unused in the dependency tree, which brings the request cancellation this codebase has none of, then add error reporting and write the tests that pin the Phase 1 security fixes — the first tests this repository will have gained in two review cycles." },
+    { "number": 3, "name": "Modernisation & Governance", "objective": "Replace the unmaintained build chain with Vite, move Ant Design to 5 once the query migration has settled, and add the performance and accessibility measurement that a public-facing service should have. None of it is urgent; all of it is cheaper once the pipeline can verify a change." }
+  ],
+
+  "architecturalRecommendations": [
+    { "aspect": "Untrusted content rendering", "current": "Five `dangerouslySetInnerHTML` sites, no sanitiser in the project, and one site wrapped in an image-stripping regex that occupies a sanitiser's position.", "recommended": "One sanitising component owns every `__html`, with presentational transforms applied after it.", "recommendation": "Add DOMPurify behind a shared `SafeHtml` component, route all five sites through it, and rename or remove `truncateImagesFromHtml` so nothing reads as a security control that is not one. Add a CI grep rejecting new raw usages." },
+    { "aspect": "Session credential handling", "current": "A 30-day non-revocable API token in `localStorage` on a public origin.", "recommended": "No long-lived credential readable by page script.", "recommendation": "Hold the access token in memory with a refresh token in an HttpOnly, Secure, SameSite cookie. Raise it with the server team alongside the token-revocation work their own report recommends, since both need the same backend change." },
+    { "aspect": "Response headers", "current": "A new nginx configuration that sets `Cache-Control` and no security headers.", "recommended": "A CSP plus the standard protective headers at the serving layer.", "recommendation": "Use the file that now exists: add `Content-Security-Policy` in report-only mode first, then enforce, together with `X-Frame-Options`, `X-Content-Type-Options` and `Referrer-Policy`. This is the cheapest meaningful security improvement available to this application." },
+    { "aspect": "Server state", "current": "Redux slices with per-slice loading flags, refetch on mount, no deduplication and no cancellation anywhere.", "recommended": "Server data in a query cache; only genuine client state in slices.", "recommendation": "Adopt RTK Query from the installed Redux Toolkit, starting with shifts and notifications, and let cancellation arrive with it rather than building a separate convention." },
+    { "aspect": "Delivery", "current": "A GitLab pipeline whose test stage cannot fail, plus a Jenkins build that produces the production bundle and is not in this repository.", "recommended": "One authoritative pipeline with a blocking test, lint and audit gate.", "recommendation": "Establish which pipeline owns production, put the gate there, and make it required for merge. Document the division in this repository so the next reviewer does not have to infer it from a Dockerfile comment." },
+    { "aspect": "Build toolchain", "current": "Create React App 5.0.0 behind craco 6.4.3, unmaintained, with Ant Design 4 — though React is already at 18.", "recommended": "A maintained build with a supported upgrade path.", "recommendation": "Replace craco and react-scripts with Vite in a single step, since craco exists only to configure CRA. Then Ant Design 5, after the query migration. Land the dependency audit first so the sequence follows known exposure." }
+  ],
+
+  "suggestions": [
+    { "suggestion": "Add the security headers to nginx.conf this week", "description": "The file was created in September and sets one cache header. Adding a report-only CSP plus `X-Frame-Options`, `X-Content-Type-Options` and `Referrer-Policy` is a couple of hours, needs no application change, and is the single highest-value-per-hour item in this report for a public-facing application.", "impact": "Contains the consequence of the injection path while the sanitisation work is scheduled, rather than waiting for it." },
+    { "suggestion": "Rename or delete truncateImagesFromHtml regardless of the rest", "description": "Even before DOMPurify lands, the helper should not sit in that position with that name. It reads as the sanitising step in an unsafe render and will mislead the next person who reviews this code — including whoever implements A2.", "impact": "Removes a false assurance from the codebase for the cost of a rename." },
+    { "suggestion": "Confirm what the Jenkins pipeline does", "description": "The Dockerfile says the production bundle is built there, and that pipeline is not in this repository. If it already runs tests and lint, part of A3 is addressed in a place this review cannot see; if it does not, production is built by the pipeline with no gate at all. Either way the answer changes the finding.", "impact": "Resolves the one item in this report that could not be verified from the code, and establishes which pipeline owns the quality gate." },
+    { "suggestion": "Borrow from the sibling CRM rather than starting fresh", "description": "The CRM has added accessibility linting, grown its test suite from 15 files to 26, and implemented request cancellation correctly in one component. All three are things this repository needs and the organisation has already worked out once.", "impact": "Shortens three remediations by reusing patterns and configuration that already exist a repository away." }
+  ],
+
+  "capabilities": [
+    { "practice": "Untrusted content escaped or sanitised", "status": "absent", "notes": "Five `dangerouslySetInnerHTML` sites, no sanitiser in the project, one site wrapped in an image-stripping regex that is not one (A2)." },
+    { "practice": "Session credential kept out of script reach", "status": "absent", "notes": "The access token is in `localStorage` on the public-facing origin (A1)." },
+    { "practice": "Content Security Policy and security headers", "status": "absent", "notes": "No CSP anywhere; the new `nginx.conf` sets only `Cache-Control` (G1)." },
+    { "practice": "Runtime image hygiene", "status": "good", "notes": "The September Dockerfile serves a pre-built static bundle on `nginx:alpine` with no node runtime, no package manager and no environment file." },
+    { "practice": "Automated tests exist", "status": "absent", "notes": "Four test files, unchanged since July; the AI timesheet review feature arrived without any (A4)." },
+    { "practice": "Tests and lint enforced before merge", "status": "absent", "notes": "The GitLab test stage holds one `allow_failure` Sonar job; the Jenkins pipeline's gates are unknown (A3)." },
+    { "practice": "Client error reporting", "status": "absent", "notes": "No Sentry, Bugsnag or Rollbar, and no reporting error boundary (A4)." },
+    { "practice": "Client performance monitoring", "status": "absent", "notes": "No real-user monitoring, Core Web Vitals collection or bundle budget (G2)." },
+    { "practice": "Request cancellation on unmount", "status": "absent", "notes": "Zero `AbortController` or `CancelToken` references in the entire source tree (A5)." },
+    { "practice": "Server-state caching and deduplication", "status": "absent", "notes": "Redux slices only; RTK Query is installed inside Redux Toolkit and unused (A6)." },
+    { "practice": "Maintained build toolchain", "status": "absent", "notes": "Create React App 5.0.0 behind craco, unmaintained, with Ant Design 4 and TypeScript 4.6 — though React is at 18 (A7)." },
+    { "practice": "Accessibility tooling", "status": "absent", "notes": "No accessibility lint plugin, conformance target or runtime testing — and unlike the sibling CRM, no jsx-a11y plugin has been added (G3)." },
+    { "practice": "Server-side orchestration of long-running work", "status": "good", "notes": "AI timesheet analysis was deliberately moved out of the client to worker-initiated server processing this cycle, with duplicate-upload prevention added alongside." }
+  ],
+
+  "architecturalNarrative": "Of the four Novello applications refreshed in this round, this is the one where nothing moved. All seven findings survive with identical evidence — the same token in the same `localStorage` wrapper, the same five HTML sinks in the same four components, the same four test files, the same single-job pipeline, zero request cancellation, the same Redux-only server state, the same unmaintained build chain. The twenty-four commits in between delivered real work: AI timesheet review, notification polish, and a containerised deployment. None of it touched a finding, and nothing in delivery required it to.\n\nThat matters more here than in the sibling applications because this is the public face of the platform. Candidates reach it from their own devices, so the population able to load it and interact with its endpoints is unbounded, and the content it renders is authored elsewhere — notification bodies and declaration text arrive from the API, largely written by internal staff through the CRM. The injection path therefore crosses surfaces, and at its end sits a thirty-day non-revocable token in `localStorage` with no CSP to constrain what an injected script may do or where it may send data.\n\nThe detail worth carrying away is `truncateImagesFromHtml`. It is four lines, it strips `<img>` tags with a regular expression, and it sits wrapped around the content immediately before `__html` in the notification list — exactly where a sanitiser would sit in the same expression. Anyone auditing this file, including whoever eventually implements the fix, is liable to read that site as handled. It is not: scripts, event handlers on non-image elements and iframes all pass through untouched, and the very next line renders a second field with no wrapper at all. A helper that provides reassurance without protection is worse than no helper, and it should be renamed whatever else happens.\n\nThe September containerisation is the clearest illustration of the pattern this report describes. The Dockerfile itself is genuinely good — a pre-built static bundle on nginx, no node at runtime, no secrets, and comments explaining both the SPA routing rule and the division of labour with the build pipeline. It is better than the equivalent in the server repository, which copies `.env` into the production image. And the `nginx.conf` created beside it, the natural and now-existing home for the Content Security Policy that July recorded as a P0 gap for this very application, sets a single cache header. The capability to fix the most leveraged security gap here was created in the same commit that declined to use it. The same commit also reveals that production is built by a Jenkins pipeline not present in this repository, so the quality gate is now missing from two systems instead of one.",
+
+  "lookingAhead": "Phase 1 is eleven days and the ordering within it is the thing to get right. Sanitising the five sinks is three days and removes the active path. The nginx headers are two days — arguably two hours for a report-only CSP — and contain the consequence in the meantime. Renaming the misleading helper is a single commit and should not wait for either. Moving the token needs the backend, so raise it with the server team now, alongside the token-revocation work their own report recommends, because both depend on the same change.\n\nPhase 2 is where this repository catches up with its sibling. RTK Query is already installed and unused, so the cache and the request cancellation this codebase entirely lacks arrive together as a migration rather than a decision. Error reporting is a day and is what makes the public-facing application observable for the first time. The tests written to pin the Phase 1 fixes will be the first this repository has gained across two review cycles — which is the metric to watch, because the CRM grew from fifteen test files to twenty-six over the same period and this one stayed at four.\n\nThe honest summary for whoever owns this application is that it is not deteriorating, it is simply not improving, and the reason is visible in the pipeline rather than in the code. The team demonstrably writes sound new code — the AI timesheet work moved orchestration to the server where it belongs, the container is cleanly built, the existing tests were repaired rather than skipped when they broke. What is missing is anything that compels attention to the backlog. Until a merge can fail, the findings in this report will be exactly as true at the next refresh as they were at the last one."
+}

@@ -1,0 +1,25 @@
+{
+  "name": "architecture-review",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Stack-agnostic code assessment rule library and client-ready HTML report generator",
+  "scripts": {
+    "report": "node tools/report.mjs",
+    "validate": "node tools/validate.mjs",
+    "portfolio": "node tools/portfolio.mjs",
+    "resolve": "node tools/resolve.mjs",
+    "targets": "node tools/resolve.mjs --list",
+    "index-rules": "node tools/index-rules.mjs",
+    "example": "node tools/report.mjs --input examples/industrifinans.assessment.json",
+    "remediation": "node tools/remediation.mjs"
+  },
+  "dependencies": {},
+  "optionalDependencies": {
+    "docx": "^9.5.1",
+    "sharp": "^0.34.4"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

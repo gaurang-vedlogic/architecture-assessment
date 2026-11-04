@@ -1,0 +1,407 @@
+{
+  "meta": {
+    "app": "novello-mobile",
+    "productName": "Novello Candidate Mobile App",
+    "client": "Novello Healthcare",
+    "org": "Novello",
+    "repository": "gitlab.com/appollo79/novello-mobile",
+    "repoPath": "D:/repos/novello/novello-mobile",
+    "branch": "fix/play-store-api36-16kb",
+    "commit": "1246b4c",
+    "version": "1.0.21",
+    "stack": "React Native 0.81.5 · Expo 54 · React 19 · TypeScript 5.9 · axios 1.6 · react-hook-form · yup · expo-secure-store 15 · Sentry 7 · @react-native-community/netinfo",
+    "reviewDate": "2026-10-30",
+    "assessmentType": "Technical Landscape Assessment & Recommendations Report — Refresh",
+    "documentStatus": "CONFIDENTIAL",
+    "scope": "Refresh of the 2026-07-29 assessment, re-reviewing the candidate mobile application at branch `fix/play-store-api36-16kb` (commit 1246b4c) after 33 commits and +2,727/−1,512 lines across 102 files. All five baseline findings and all three capability gaps were re-verified against current code. The period's work was dominated by Google Play compliance — target SDK and API level, 16KB page-size support, and photo-permission policy — so the review paid particular attention to the platform configuration and the dependency upgrade that accompanied it. Backend behaviour is assessed in `novello-server` and `novello-database`; the candidate web application is assessed in `novello-client-app`."
+  },
+
+  "verdict": {
+    "prod": "APPROVE_WITH_CONDITIONS",
+    "devTest": "APPROVED",
+    "summary": "This application remains the strongest in the Novello estate and has improved materially since July. The toolchain finding is comprehensively closed: Expo moved from 48 to 54, React Native from 0.71 to 0.81.5, React to 19 and TypeScript to 5.9, driven by Google Play's API-level and 16KB page-size requirements and carried out thoroughly rather than minimally. Credentials are still held in `expo-secure-store` rather than plain storage, Sentry is properly initialised behind a service wrapper, and connectivity detection has been added. Three conditions remain and none is new: the Android release manifest still permits cleartext HTTP, there is still no build or release automation of any kind, and there are still no tests. The first is a half-day fix that the compliance pass was the natural moment to make and did not; the other two are why a thorough upgrade like this one had to be verified by hand.",
+    "blockers": [
+      { "text": "Remove `android:usesCleartextTraffic=\"true\"` from the release manifest, or scope it to debug builds only.", "findingId": "M1" },
+      { "text": "Establish reproducible builds — an EAS or CI configuration — so a release artefact is traceable to a commit rather than to a developer's machine.", "findingId": "M2" }
+    ]
+  },
+
+  "objective": {
+    "narrative": "To re-establish the state of the candidate mobile application three months after the initial assessment, verifying which findings have been closed and reviewing the substantial dependency and platform work completed since. The engagement re-tested all five baseline findings and all three capability gaps against current code, and reviewed the Google Play compliance changes that drove the period's work.",
+    "metrics": [
+      { "value": "33", "label": "Commits Since Review", "detail": "+2,727 / −1,512 lines across 102 files" },
+      { "value": "5", "label": "Findings", "detail": "P1=3  P2=2" },
+      { "value": "1 of 5", "label": "Baseline Findings Fixed", "detail": "the toolchain finding, closed comprehensively" },
+      { "value": "26.5", "label": "Est. Total Effort", "detail": "Man-days across all three phases" }
+    ]
+  },
+
+  "executiveSummary": "The mobile application was the healthiest codebase in the estate at the July review and it is healthier now. The single largest improvement found anywhere in this refresh round is here: the toolchain finding is closed, and closed properly. Expo went from 48 to 54 — six major releases — React Native from 0.71 to 0.81.5, React to 19 and TypeScript from 4.9 to 5.9, alongside current Sentry and secure-store packages. The trigger was external, Google Play's target-API and 16KB page-size requirements, and the team used it to bring the whole dependency surface forward rather than doing the minimum the store would accept. Alongside it they dropped the `READ_MEDIA_IMAGES` and `READ_MEDIA_VIDEO` permissions to comply with Play's photo policy, which is the kind of change that reduces what the application can ask of a candidate's device.\n\nWhat has not changed is the delivery position, and it is the reason to keep reading. There is no `eas.json`, no CI configuration, no fastlane setup and no `test` script — so an upgrade of this size, spanning six major Expo versions and 102 files, was verified entirely by hand and shipped from a developer's machine. The version history shows the shape of that: a release-handoff document was added and then removed two commits later, versions bumped by hand across `package.json`, the Android `versionCode` and iOS separately, and the current HEAD sitting on a long-lived branch named `fix/play-store-api36-16kb` with `develop` merged into it rather than the reverse. The application in the stores was built on somebody's laptop from a feature branch, and nothing in the repository records which commit produced it.\n\nThe security posture is genuinely good relative to its siblings and has one persistent flaw. Tokens live in `expo-secure-store`, which is the platform keystore rather than readable storage — a direct contrast with both web applications, which hold the same credential in `localStorage`. Sentry is initialised in a dedicated `CrashlyticsService` with explicit `captureException` calls rather than scattered through components. Connectivity is detected through `netinfo` and surfaced in a `NoInternetModal` and a flow-gating hook. Against that, `android:usesCleartextTraffic=\"true\"` remains in the release manifest at line 36, permitting plain HTTP from the production app. It is a half-day change, and the compliance pass that touched the manifest for API levels and permissions was the obvious moment to make it.\n\nThe remaining items are unchanged and modest. There are no tests at all — not a thin suite, zero test files and no test script — which on a codebase that just absorbed six major framework versions is the gap that most increases the cost of the next upgrade. Sentry's symbolication is still unverified: the SDK is wired correctly but no `sentry.properties` or build-time source-map upload configuration exists, so release-build stack traces are likely to arrive minified. Certificate pinning and request retry remain absent, both reasonable to defer.",
+
+  "scorecard": {
+    "targetLabel": "target 3.7 avg",
+    "narrative": "Maintainability moves from 2.0 to 2.5 on the toolchain upgrade — a deliberate, complete modernisation is worth half a point — held back from more by the complete absence of tests, which is what made that upgrade risky and will do so again. DevOps stays at the floor of 1.0: no build automation, no CI, no release traceability, and production artefacts cut by hand from a feature branch. Security holds at 3.0: the secure-store and Sentry choices are good and the cleartext-HTTP flag is the one real flaw, unchanged. Architecture, scalability and observability are unchanged, with the netinfo addition a small positive within scalability rather than enough to move it.",
+    "dimensions": [
+      { "id": "architecture", "label": "Architecture Quality", "current": 3.5, "target": 4.0, "maturity": "Defined", "keyGap": "Structure is sound — a dedicated `CrashlyticsService`, hooks separated from components, validation utilities extracted — and absorbed six major Expo versions without reorganisation. Capped below 4.0 because no automated check enforces any of it (M3)." },
+      { "id": "security", "label": "Security Posture", "current": 3.0, "target": 4.0, "maturity": "Defined", "keyGap": "Credentials in `expo-secure-store` and reduced media permissions are both genuinely good, but `android:usesCleartextTraffic=\"true\"` remains in the release manifest (M1) and there is no certificate pinning on the authentication path (G1)." },
+      { "id": "scalability", "label": "Scalability Readiness", "current": 3.0, "target": 3.5, "maturity": "Defined", "keyGap": "Connectivity is now detected and surfaced to the user, but there is still no request retry, no offline queue and no cached read path, so a candidate on an intermittent connection loses work rather than deferring it (G2)." },
+      { "id": "maintainability", "label": "Code Maintainability", "current": 2.5, "target": 3.5, "maturity": "Developing", "keyGap": "The toolchain is now current across Expo, React Native, React and TypeScript — the baseline finding is closed — but there are zero test files and no `test` script (M3), so that upgrade and the next were and will be verified entirely by hand." },
+      { "id": "observability", "label": "Observability & Monitoring", "current": 3.0, "target": 3.5, "maturity": "Defined", "keyGap": "Sentry is correctly initialised behind a service wrapper with explicit exception capture, but no `sentry.properties` or source-map upload step exists, so release crash reports are likely unsymbolicated and therefore hard to action (M5)." },
+      { "id": "devops", "label": "DevOps Maturity", "current": 1.0, "target": 3.5, "maturity": "Initial", "keyGap": "No EAS configuration, no CI, no fastlane and no test script (M2); versions bumped by hand across three files; and production cut from a long-lived `fix/` branch with no record of which commit produced the store artefact (M6)." }
+    ]
+  },
+
+  "systemModel": {
+    "purpose": "The candidate mobile application, used by healthcare workers on their own phones to manage availability, browse and accept shifts, submit timesheets with photographed documents, complete compliance declarations and receive notifications. It is the primary interface for the workforce — the application a candidate uses on a shift — and holds their credentials on the device alongside cached profile and shift data.",
+    "actors": "Candidates authenticate against the API and receive a JWT, which this application stores in `expo-secure-store` — the iOS keychain and Android keystore respectively. The application talks only to the Novello API; there is no direct third-party integration on the data path. Sentry receives crash and error reports. Distribution is through the Apple App Store and Google Play, so the deployed artefact is reviewed by both stores before reaching candidates. The realistic risk is not an attacker on the device but the network between the device and the API, and the absence of any automated check on what gets built and shipped.",
+    "dataFlows": "The application starts, reads the token from secure storage, and calls the API through an axios instance. Screens fetch per view; connectivity is checked with `netinfo` and a `NoInternetModal` blocks interaction when offline, with `useFlowRun` gating multi-step flows on the same signal. Timesheet submission uploads photographed documents to the API, which hands them to a server-side AI analysis pipeline — the client polls for the result rather than driving it. Errors are reported through `CrashlyticsService` to Sentry. Builds are produced locally and submitted to the stores by hand.",
+    "invariants": [
+      { "statement": "The session credential is stored in the platform keystore, not in readable storage.", "status": "HOLDS", "note": "Verified: `expo-secure-store` 15.0.8 is the storage mechanism. This is the invariant both Novello web applications violate, and it is why this report carries no P0." },
+      { "statement": "All network traffic from a release build uses TLS.", "status": "VIOLATED", "findingId": "M1", "note": "`android:usesCleartextTraffic=\"true\"` at AndroidManifest.xml:36 permits plain HTTP from the production Android application." },
+      { "statement": "The authentication path is protected against a compromised or substituted certificate authority.", "status": "VIOLATED", "note": "No certificate pinning: a search for pinning, `sslPinning` and `publicKeyHash` across `src/`, `android/`, `ios/` and the manifest returns nothing (G1)." },
+      { "statement": "A release artefact is reproducible from a known commit.", "status": "VIOLATED", "findingId": "M2", "note": "No `eas.json`, no CI configuration, no fastlane. Builds are produced locally, so nothing ties a store binary to a commit." },
+      { "statement": "A change is verified by an automated check before release.", "status": "VIOLATED", "findingId": "M3", "note": "Zero test files anywhere outside `node_modules`, and no `test` script in `package.json`." },
+      { "statement": "A crash report identifies the line of code that produced it.", "status": "CHECK", "findingId": "M5", "note": "Sentry is correctly initialised, but no `sentry.properties` or source-map upload configuration was found, so release traces are probably unsymbolicated. Requires a release build to confirm." },
+      { "statement": "The application requests only the device permissions it needs.", "status": "HOLDS", "note": "Verified improved: `READ_MEDIA_IMAGES` and `READ_MEDIA_VIDEO` were deliberately dropped this cycle for Google Play's photo policy." },
+      { "statement": "The dependency surface is on a supported release receiving security updates.", "status": "HOLDS", "note": "Fixed since July — the baseline M4 finding is closed. Expo 54, React Native 0.81.5, React 19, TypeScript 5.9, Sentry 7, secure-store 15 — all current. Recorded as a refuted candidate and under positive posture." },
+      { "statement": "Work in progress survives a loss of connectivity.", "status": "VIOLATED", "note": "Connectivity is detected and the user is blocked, which is an improvement, but there is no retry, no queue and no cached read path, so an interrupted submission is lost rather than deferred (G2)." },
+      { "statement": "The branch that produces a release is the branch the team integrates on.", "status": "VIOLATED", "findingId": "M6", "note": "HEAD is `fix/play-store-api36-16kb` with version bumps on it and `develop` merged into it rather than the reverse." }
+    ]
+  },
+
+  "threatModel": "This application's risks are narrower than its siblings' because the two things that usually go wrong are done right: the credential is in the platform keystore rather than readable storage, and the application talks only to the Novello API. What remains is the network and the pipeline. On the network, the Android release build permits cleartext HTTP, so a candidate on a hostile or misconfigured network — a hospital guest Wi-Fi, a public hotspot — can have traffic downgraded or intercepted where TLS would otherwise be mandatory, and there is no certificate pinning as a second layer. On the pipeline, the absence of any build automation or test means the threat is self-inflicted: a release is whatever one person's machine produced from a feature branch, with no record of which commit it was and no automated check that it works. For an application distributed through two app stores, where a bad release takes days to replace, that is the more probable source of harm than any attacker.",
+
+  "coverage": {
+    "method": "Refresh review, baseline-differential. All five findings and all three capability gaps from the 2026-07-29 assessment were re-tested against the current tree, and the Google Play compliance work that dominated the period was reviewed through the commit history and the platform configuration it changed. Static review only: no device or simulator run, no release build produced, and no automated tooling executed.",
+    "size": "33 commits since baseline commit 4f903db, +2,727/−1,512 lines across 102 files, measured with `git diff --stat` excluding lockfiles. Zero test files. App version 1.0.21, Android versionCode 51.",
+    "deepRead": [
+      "package.json — the full dependency surface, compared field by field against the baseline versions",
+      "android/app/src/main/AndroidManifest.xml — permissions and the cleartext-traffic flag",
+      "src/services/CrashlyticsService.ts — Sentry initialisation and exception capture",
+      "src/components/modals/NoInternetModal.tsx and src/hooks/useFlowRun.ts — the connectivity handling added this cycle",
+      "The 33-commit history, to establish what the period's work actually was",
+      "The repository root, for eas.json, CI configuration, fastlane and sentry.properties — all absent"
+    ],
+    "grepSwept": [
+      "`usesCleartextTraffic` / `networkSecurityConfig` across the Android manifest and Expo configuration",
+      "dependency versions for expo, react-native, react, typescript, @sentry/react-native, expo-secure-store and axios, at HEAD and at baseline",
+      "`eas.json`, `.gitlab-ci.yml`, `.github`, `Jenkinsfile`, `fastlane` at the repository root — none present",
+      "`*.test.*` / `*.spec.*` across the tree excluding node_modules — zero, and no `test` script in package.json",
+      "`pinning` / `sslPinning` / `publicKeyHash` across src/, android/, ios/ and package.json — none",
+      "`netinfo` / `retry` / `offline` / `react-query` / `tanstack` in package.json and usage of netinfo in src/",
+      "`Sentry.init` / `captureException` across src/",
+      "`sentry.properties` and Sentry configuration in app.json / app.config.*"
+    ],
+    "notRead": [
+      "`node_modules/` — no dependency audit was run against the newly upgraded tree, which is the one thing a large version jump most warrants",
+      "The majority of the 102 changed files — review was directed by the baseline findings and the compliance work rather than reading the diff in full",
+      "iOS project configuration beyond the certificate-pinning sweep; the Android manifest was read, the Xcode project was not",
+      "Runtime behaviour: no device or simulator session, so no verification that the Expo 54 upgrade is free of regressions, and no measurement of startup time or memory",
+      "The timesheet break-units fix included in this period — a correctness change to hours calculation that was not independently verified, and which the companion database report's monetary-precision finding makes worth testing",
+      "The backend API, assessed separately in `novello-server` and `novello-database`"
+    ],
+    "caveats": [
+      "M5 is marked CHECK rather than VIOLATED because confirming it requires a release build and a deliberate crash. The static evidence is that Sentry is correctly initialised and that no `sentry.properties` or source-map upload step exists — which strongly implies unsymbolicated release traces, but a build-time plugin could be supplying it in a way the repository does not show.",
+      "The dependency upgrade is reported as a closed finding on the basis of declared versions in `package.json`. Whether the upgraded application is free of behavioural regressions was not established — no device run was performed and there are no tests (M3), so this report cannot speak to whether Expo 54 broke anything. That is precisely the risk M3 describes.",
+      "The timesheet break-units and weekly-total fix in this period changes hours arithmetic. It was noted, not verified. Given the companion database report's finding that monetary values are stored as floats and flow from hours through rate cards to invoices, a change to hours calculation is worth independent checking — but that belongs to the data layer's remediation rather than this report's.",
+      "M6 rests on the branch name, the merge direction and the version-bump commits. Whether the store artefacts were in fact built from this branch could not be confirmed from the repository, since nothing records build provenance — which is the finding. Confirm with whoever cut the 1.0.21 release.",
+      "No `npm audit` was run, so while the dependency versions are current, no statement is made about known vulnerabilities in the installed tree.",
+      "This application scores better than its siblings partly because its scope is narrower — it has one backend integration and no administrative surface. The comparison is useful for the secure-store and Sentry choices, which are genuine wins, but should not be read as the mobile team outperforming the web teams on equivalent problems."
+    ]
+  },
+
+  "findings": [
+    {
+      "id": "M1",
+      "title": "Cleartext HTTP is permitted in the Android release manifest",
+      "ruleId": "SEC-006",
+      "group": "Platform Configuration",
+      "layer": "Mobile",
+      "dimension": "security",
+      "riskDimension": "Security",
+      "criticality": "Medium",
+      "priority": "P1",
+      "phase": 1,
+      "gate": "warning",
+      "confidence": "Confirmed",
+      "claim": "`android:usesCleartextTraffic=\"true\"` is set on the `<application>` element in the main Android manifest, so the production Android build permits plain HTTP requests. Unchanged since July, including through a compliance pass that edited the same file.",
+      "evidence": [
+        { "file": "android/app/src/main/AndroidManifest.xml", "line": 36, "snippet": "android:usesCleartextTraffic=\"true\">", "note": "On the `<application>` element in `src/main`, which is the release manifest — not a debug-only variant. Android would otherwise block cleartext by default from API 28 onwards." },
+        { "file": "android/app/src/main/AndroidManifest.xml", "note": "No `networkSecurityConfig` attribute accompanies it, so there is no domain allow-list narrowing which hosts may be reached in the clear — the permission is blanket." },
+        { "file": "package.json", "note": "The same cycle moved this project to Expo 54 and target API 36 and dropped two media permissions from this manifest for Play policy, so the file was actively edited while this flag was left in place." }
+      ],
+      "reasoning": "Android blocks cleartext traffic by default precisely so that an application has to opt in deliberately. Opting in at the application level removes that protection for every request, so a candidate on a hostile or misconfigured network — hospital guest Wi-Fi, a public hotspot, a captive portal — can have traffic downgraded to HTTP where the platform would otherwise refuse it. With no certificate pinning as a second layer (G1), the platform default was the only transport protection in place. The flag is usually added to unblock a local development server and then never removed, which the absence of any `networkSecurityConfig` supports.",
+      "impact": "Restores Android's default refusal of unencrypted traffic for the production application, so a candidate's credentials and personal data cannot be transmitted in the clear on an untrusted network.",
+      "refutation": "Checked whether the flag is scoped to a debug build variant, which would make it harmless — it is in `src/main`, which applies to release. Checked for a `networkSecurityConfig` that might narrow it to a specific development host: none is present, so the permission is unqualified. Checked whether the Expo configuration overrides it at build time: no `usesCleartextTraffic` entry appears in `app.json` or `app.config.*`, so the manifest value stands. Survives unchanged.",
+      "remediation": "Remove the attribute. If a local development server over HTTP is still needed, add a `network_security_config.xml` permitting cleartext for that host only and reference it from a debug-variant manifest, so the release build keeps the platform default. Verify with a release build that no API call relies on HTTP — the API is served over HTTPS per the server report, so none should.",
+      "sampleFix": "<!-- android/app/src/debug/AndroidManifest.xml only -->\n<application android:networkSecurityConfig=\"@xml/network_security_config\" />\n<!-- and remove usesCleartextTraffic from src/main entirely -->",
+      "effortDays": 0.5,
+      "role": "Mobile Engineer"
+    },
+    {
+      "id": "M2",
+      "title": "No build or release automation of any kind",
+      "ruleId": "DVO-003",
+      "group": "Delivery",
+      "layer": "Mobile",
+      "dimension": "devops",
+      "riskDimension": "Reliability",
+      "criticality": "High",
+      "priority": "P1",
+      "phase": 1,
+      "gate": "warning",
+      "confidence": "Confirmed",
+      "claim": "There is no `eas.json`, no CI configuration, no fastlane setup and no `test` script, so every store build is produced on a developer's machine with nothing recording which commit it came from or verifying that it works.",
+      "evidence": [
+        { "file": "package.json", "note": "No `test` script and no build or submit script beyond Expo's defaults. A search of the repository root for `eas.json`, `.gitlab-ci.yml`, `.github`, `Jenkinsfile` and `fastlane` returns nothing." },
+        { "file": "package.json", "note": "Version is bumped by hand in three places — `package.json`, the Android `versionCode` (now 51) and the iOS version — across separate commits: \"bump app version 1.0.20\", \"bump Android versionCode to 51\", \"bump iOS app version 1.0.20\", \"bump app version 1.0.21\"." },
+        { "file": "android/app/src/main/AndroidManifest.xml", "note": "The 33-commit history shows a release-handoff document added (\"docs: add release handoff for Android/iOS production builds\") and removed two commits later (\"docs: remove release handoff doc\") — the process exists as knowledge rather than as configuration." }
+      ],
+      "reasoning": "This is the finding that gives every other one its weight. An upgrade spanning six major Expo versions, ten React Native minors and 102 files was shipped to two app stores with no automated verification and no reproducible build. The consequence is not hypothetical: nothing in the repository can answer which commit produced version 1.0.21, so if a regression is reported against it there is no artefact-to-source link to start from. Store distribution makes it worse than it would be for a web application — a bad release takes days to replace rather than minutes. Criticality is High for that reason even though nothing is currently broken.",
+      "impact": "Makes every release traceable to a commit and reproducible by anyone, removing the dependency on one machine and one person's knowledge of the process.",
+      "refutation": "Checked for an `eas.json` that Expo projects commonly carry even without CI — absent. Checked whether the removed release-handoff document had been replaced by configuration elsewhere: it was deleted, not superseded. Checked whether Expo's hosted build service might be in use without a committed configuration, which is possible — but that would still leave no version-controlled build definition and no commit-to-artefact record, so the finding holds either way. Survives unchanged.",
+      "remediation": "Add an `eas.json` with development, preview and production profiles, which is the smallest step that makes builds reproducible and is the Expo-native answer. Then add a CI job that runs type-checking and lint on every merge request, and `eas submit` for store delivery so the artefact and its commit are recorded together. Derive the three version numbers from one source rather than bumping them separately.",
+      "effortDays": 8,
+      "role": "DevOps Engineer",
+      "rationale": "Placed in Phase 1 despite being P1 and not a security finding, because it is the precondition for safely attempting anything else here — including verifying the upgrade that has already shipped — and because DevOps is the dimension sitting at the floor."
+    },
+    {
+      "id": "M3",
+      "title": "No tests, on a codebase that has just absorbed six major framework versions",
+      "ruleId": "TST-001",
+      "group": "Quality Assurance",
+      "layer": "Mobile",
+      "dimension": "maintainability",
+      "riskDimension": "Maintainability",
+      "criticality": "Medium",
+      "priority": "P1",
+      "phase": 2,
+      "gate": "warning",
+      "confidence": "Confirmed",
+      "claim": "A search of the whole tree outside `node_modules` returns zero `.test.` or `.spec.` files, and `package.json` declares no `test` script — so the Expo 48-to-54 upgrade was verified entirely by manual exercise of the application.",
+      "evidence": [
+        { "file": "package.json", "note": "No `test` script and no test runner in the dependency surface — no jest-expo, no @testing-library/react-native. Zero test files anywhere outside `node_modules`." },
+        { "file": "src/utils/validation.utils.ts", "note": "Touched this cycle and a natural unit-test target — pure validation logic with no React or native dependency, which is where a first suite costs least and returns most." },
+        { "file": "src/services/CrashlyticsService.ts", "note": "Likewise well isolated behind a service boundary. The codebase is structured in a way that makes it testable; nothing has been tested." }
+      ],
+      "reasoning": "The absence of tests is always a maintainability finding; what makes it pointed here is the upgrade that just happened. Expo 48 to 54 crosses six major releases with breaking changes in each, and the only thing standing between those changes and a candidate's phone was somebody opening the app and trying it. That is also the cost of the next upgrade, which Google Play's annual target-API cadence guarantees will come. The code is well structured for testing — pure utilities, a service wrapper, hooks separated from components — so the barrier is habit rather than design.",
+      "impact": "Gives the next framework upgrade — which the store's annual API cadence makes certain — an automated way to establish that the application still works, instead of a manual pass.",
+      "refutation": "Checked for tests in a non-standard location or an `__tests__` directory — none exists; the search covered the whole tree. Checked whether a type-check serves as a proxy for a test suite: TypeScript 5.9 is configured and catches signature breakage, which is genuinely useful through a major upgrade, but it cannot catch behavioural regressions in navigation, permissions or native-module interaction, which is where Expo major versions break. Survives unchanged.",
+      "remediation": "Start where the return is highest and the friction lowest: add jest-expo and write unit tests for the pure utilities — `validation.utils.ts` and the timesheet hours calculation changed this cycle, which the companion database report gives a specific reason to pin. Then add React Native Testing Library coverage for the authentication and timesheet-submission flows. Run both in the CI job from M2, so the next upgrade has a gate.",
+      "effortDays": 8,
+      "role": "Mobile Engineer"
+    },
+    {
+      "id": "M5",
+      "title": "Crash-report symbolication is not configured in the repository",
+      "ruleId": "OBS-004",
+      "group": "Observability",
+      "layer": "Mobile",
+      "dimension": "observability",
+      "riskDimension": "Reliability",
+      "criticality": "Low",
+      "priority": "P2",
+      "phase": 1,
+      "gate": "clear",
+      "confidence": "Needs-runtime-check",
+      "claim": "Sentry is correctly initialised and used, but no `sentry.properties` file and no source-map or dSYM upload configuration exists anywhere in the repository — so release-build stack traces are likely to arrive minified and unactionable.",
+      "evidence": [
+        { "file": "src/services/CrashlyticsService.ts", "line": 6, "snippet": "Sentry.init({", "note": "Correctly initialised behind a service wrapper, with explicit `Sentry.captureException` at line 27 rather than reliance on global handlers alone. The reporting side is well done." },
+        { "file": "package.json", "note": "`@sentry/react-native` ~7.2.0 — current. The SDK is not the gap." },
+        { "file": "android/app/src/main/AndroidManifest.xml", "note": "No `sentry.properties` at the repository root, and no Sentry configuration or plugin entry in `app.json`/`app.config.*` that would upload source maps or dSYMs at build time." }
+      ],
+      "reasoning": "A crash reporter that cannot name the line of code is a counter rather than a diagnostic. The team clearly intends to use Sentry properly — the service wrapper and explicit capture calls show that — so the gap is the build-time half of the setup rather than the application half. It interacts with M2: source-map upload is something a build pipeline does, and there is no pipeline, so there is nowhere natural for it to live. Reported at Low because it degrades the usefulness of a working tool rather than breaking anything.",
+      "impact": "Turns crash reports into actionable stack traces naming the failing line, which is what makes Sentry worth the integration already built.",
+      "refutation": "Checked `app.json` and `app.config.*` for a Sentry Expo plugin entry that would handle upload automatically, which would refute this entirely — none found. Checked for `sentry.properties` at the root and in the `android/` and `ios/` directories — absent. Confidence is `Needs-runtime-check` rather than Confirmed because a correctly configured upload could in principle be supplied by an environment variable at build time in a way the repository does not record; producing a release build and triggering a crash would settle it in an hour.",
+      "remediation": "Add the Sentry Expo plugin with an auth token supplied at build time and a release name derived from the app version, so source maps and dSYMs upload as part of the build — which is also a reason to do M2 first, since that is where it belongs. Then verify by triggering a deliberate crash in a release build and confirming the trace is symbolicated.",
+      "effortDays": 1,
+      "role": "Mobile Engineer"
+    },
+    {
+      "id": "M6",
+      "title": "Releases are cut from a long-lived fix branch with no record of the artefact's commit",
+      "ruleId": "DVO-014",
+      "group": "Delivery",
+      "layer": "Mobile",
+      "dimension": "devops",
+      "riskDimension": "Maintainability",
+      "criticality": "Medium",
+      "priority": "P2",
+      "phase": 1,
+      "gate": "clear",
+      "confidence": "Needs-runtime-check",
+      "claim": "HEAD is `fix/play-store-api36-16kb`, version bumps for 1.0.20 and 1.0.21 sit on it, and `develop` has been merged into it rather than the reverse — so the branch that produced the current store releases is a feature branch, and nothing records which commit became which build.",
+      "evidence": [
+        { "file": "package.json", "note": "Current branch is `fix/play-store-api36-16kb` at commit 1246b4c, whose message is \"chore: bump app version 1.0.21\" — a release bump on a fix branch." },
+        { "file": "android/app/src/main/AndroidManifest.xml", "note": "The history shows \"Merge origin/develop into fix/play-store-api36-16kb\" — integration flowing into the release branch rather than the branch merging back on completion." },
+        { "file": "package.json", "note": "`package.json` reports version 1.0.0 while the commits bump to 1.0.21 and the Android `versionCode` to 51, so the three version numbers are maintained independently and the manifest file disagrees with the release." }
+      ],
+      "reasoning": "On its own this is workflow untidiness. It matters because M2 means there is no other record: with no build pipeline, the branch and the version-bump commit are the only provenance a store artefact has, and both point at a long-lived branch that integration has been merged into. If a crash report arrives against 1.0.21 — unsymbolicated, per M5 — establishing what code is in it requires asking the person who built it. The `package.json` version sitting at 1.0.0 while the release is 1.0.21 compounds the ambiguity.",
+      "impact": "Makes it possible to determine what code is in a given store release, which is the precondition for investigating any report against it.",
+      "refutation": "Checked whether the branch had been merged back and simply remained checked out locally, which would make this a non-finding — the merge commits run in the opposite direction, with `develop` merged in. Confidence is `Needs-runtime-check` because the repository cannot establish which commit was actually submitted to either store; that requires the store console or the person who built it. The ambiguity itself is the finding.",
+      "remediation": "Merge the branch back and cut releases from the integration branch, tagging each release commit so the version maps to a commit without inference. Derive the Android `versionCode` and iOS version from the single `package.json` version rather than bumping three independently. Both become straightforward once M2 provides a pipeline to own them.",
+      "effortDays": 1,
+      "role": "Mobile Engineer",
+      "rationale": "P2 rather than P1 because nothing is broken and the remediation is largely absorbed by M2, but kept in Phase 1 because it is a day's work and because every future investigation of a production report depends on it."
+    }
+  ],
+
+  "gaps": [
+    {
+      "capability": "Certificate pinning on authentication paths",
+      "area": "Security",
+      "status": "missing",
+      "why": "Re-verified: no pinning configuration anywhere — a search for `pinning`, `sslPinning` and `publicKeyHash` across `src/`, `android/`, `ios/` and the dependency surface returns nothing. On its own this is a reasonable thing to defer, since platform TLS validation covers the ordinary case. It matters more here because M1 removes the platform's own cleartext protection, so until that is fixed there is no transport safeguard at either layer for a candidate on an untrusted network.",
+      "recommendation": "Fix M1 first — it is half a day and restores the default protection. Then consider pinning the API host's certificate or public key for the authentication and timesheet paths specifically, accepting the operational cost that a certificate rotation requires an app release, and planning the backup-pin rotation that makes that survivable.",
+      "priority": "P2",
+      "phase": 3,
+      "effortDays": 3,
+      "role": "Mobile Engineer",
+      "layer": "Mobile"
+    },
+    {
+      "capability": "Offline support and request retry",
+      "area": "Resilience",
+      "status": "partial",
+      "why": "Improved since July and worth recording as such: `@react-native-community/netinfo` 11.4.1 is now a dependency and is used in `NoInternetModal` and the `useFlowRun` hook, so the application detects connectivity loss and tells the candidate rather than failing opaquely. What is still absent is anything that preserves work — no retry, no request queue, no cached read path. A candidate completing a timesheet on a ward with patchy signal is informed they are offline and still loses the submission.",
+      "recommendation": "Add request retry with backoff to the axios instance for idempotent reads, then a persisted queue for the submissions that matter most — timesheets and shift acceptances — so an interrupted action completes when connectivity returns. Pair it with a cached read path for shift and profile data so the application opens usefully offline.",
+      "priority": "P2",
+      "phase": 3,
+      "effortDays": 5,
+      "role": "Mobile Engineer",
+      "layer": "Mobile"
+    }
+  ],
+
+  "refutedCandidates": [
+    {
+      "claim": "Expo and React Native are several major releases behind — the July M4 finding.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "Comprehensively fixed, and it is the largest single improvement found anywhere in this refresh round. Expo moved from 48 to 54, React Native from 0.71 to 0.81.5, React to 19.1.0, TypeScript from 4.9 to 5.9, with `@sentry/react-native` at 7.2.0 and `expo-secure-store` at 15.0.8 — all current. The driver was Google Play's target-API and 16KB page-size requirements, and the team took the whole dependency surface forward rather than doing the minimum to pass review. Recorded under positive posture."
+    },
+    {
+      "claim": "The application stores credentials in readable storage, as both Novello web applications do.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "It does not. `expo-secure-store` 15.0.8 is the storage mechanism, which is the iOS keychain and the Android keystore — not readable by application-level code or by an injected script. This is the single clearest architectural difference between this application and its web siblings, both of which hold the same credential in `localStorage`, and it is why this report carries no P0 while theirs each carry two."
+    },
+    {
+      "claim": "The application requests excessive device permissions for a staffing app.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "The opposite happened this cycle. A commit titled \"fix: drop READ_MEDIA_IMAGES/VIDEO for Google Play photo policy\" removed two broad media permissions, narrowing what the application can ask of a candidate's device. The manifest was reviewed and no excessive permission remains."
+    },
+    {
+      "claim": "Sentry is integrated but unused, so crash reporting is nominal.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "It is properly wired. `CrashlyticsService.ts` calls `Sentry.init` and provides an explicit `captureException` wrapper taking optional context, rather than relying on global handlers alone, and the SDK is current at 7.2.0. The gap is narrower and is reported as M5: no source-map upload is configured, so the traces that do arrive are probably unsymbolicated."
+    },
+    {
+      "claim": "The offline-support gap is unchanged since July.",
+      "verdict": "Downgraded",
+      "step": 2,
+      "reasoning": "Connectivity detection has been added — `netinfo` 11.4.1, used in `NoInternetModal` and `useFlowRun` — so the application now tells a candidate when they are offline and gates multi-step flows accordingly. The capability gap moves from missing to partial. What remains absent is retry, queueing and cached reads, which is where the actual work preservation would come from."
+    },
+    {
+      "claim": "A separate capability gap exists for an automated store release pipeline, alongside the build-automation finding.",
+      "verdict": "Refuted",
+      "step": 3,
+      "reasoning": "The July assessment carried both an M2 finding for absent build automation and a separate capability gap for store release automation. On re-review these describe one piece of work with one remediation — an `eas.json` with build profiles plus `eas submit` — so carrying them separately double-counted the effort. Consolidated into M2, whose estimate covers build profiles, a CI check and store submission together."
+    }
+  ],
+
+  "positivePosture": [
+    {
+      "title": "The toolchain was brought fully current, not minimally compliant",
+      "detail": "Expo 48 to 54, React Native 0.71 to 0.81.5, React to 19.1.0, TypeScript 4.9 to 5.9, Sentry to 7.2.0, secure-store to 15.0.8. Google Play's API-level and 16KB page-size requirements forced a move, and the team used it to clear the entire dependency surface rather than doing the least the store would accept. Six major Expo versions in one cycle is a substantial, disciplined piece of work and the largest improvement in this refresh round."
+    },
+    {
+      "title": "Credentials are in the platform keystore",
+      "detail": "`expo-secure-store` holds the session token, so it sits in the iOS keychain and the Android keystore rather than in storage readable by application code. Both Novello web applications keep the same credential in `localStorage`, where an injected script can read it — this application made the right choice and has kept it through a major upgrade."
+    },
+    {
+      "title": "Device permissions were actively narrowed",
+      "detail": "`READ_MEDIA_IMAGES` and `READ_MEDIA_VIDEO` were deliberately dropped to comply with Google Play's photo policy. Reducing what an application may ask of a candidate's phone, as a considered change rather than under duress, is the kind of decision that rarely shows up in a review because nothing is left to find."
+    },
+    {
+      "title": "Crash reporting is wired behind a service boundary",
+      "detail": "`CrashlyticsService.ts` owns `Sentry.init` and exposes an explicit `captureException` wrapper accepting context, rather than scattering Sentry calls through components or relying only on global handlers. The structure means the symbolication gap in M5 is a build-configuration fix rather than an integration rewrite."
+    },
+    {
+      "title": "Connectivity loss is detected and surfaced",
+      "detail": "`@react-native-community/netinfo` is used in a `NoInternetModal` and in the `useFlowRun` hook, so a candidate on a ward with no signal is told what is happening and multi-step flows are gated rather than failing mid-way. New since July, and the right first half of offline support."
+    },
+    {
+      "title": "The codebase is structured for the tests it does not yet have",
+      "detail": "Validation logic sits in pure utilities, crash reporting behind a service, connectivity behind a hook — all testable without a device or a native module. The barrier to M3 is habit rather than architecture, which makes the first suite considerably cheaper here than in a codebase that would need restructuring first."
+    }
+  ],
+
+  "inventory": [
+    { "item": "Application", "value": "Novello Candidate Mobile App — iOS and Android, store-distributed" },
+    { "item": "Branch / commit", "value": "fix/play-store-api36-16kb @ 1246b4c (2026-10-29)" },
+    { "item": "Release version", "value": "1.0.21; Android versionCode 51 (package.json still reports 1.0.0)" },
+    { "item": "Change since last review", "value": "33 commits, +2,727 / −1,512 lines across 102 files" },
+    { "item": "Framework", "value": "Expo 54 / React Native 0.81.5 / React 19 / TypeScript 5.9 — all current, upgraded this cycle" },
+    { "item": "Credential storage", "value": "expo-secure-store 15 — platform keychain/keystore" },
+    { "item": "Crash reporting", "value": "Sentry 7.2 via CrashlyticsService; no source-map upload configured" },
+    { "item": "Connectivity handling", "value": "netinfo 11.4 — detection and user-facing modal; no retry or queue" },
+    { "item": "Automated tests", "value": "None — zero test files, no test script, no test runner" },
+    { "item": "Build and release", "value": "None — no eas.json, no CI, no fastlane; builds produced locally" },
+    { "item": "Android transport", "value": "usesCleartextTraffic=\"true\" in the release manifest" },
+    { "item": "Baseline findings resolved", "value": "1 of 5 — the toolchain finding, closed comprehensively" }
+  ],
+
+  "releaseGates": [
+    { "gate": "Transport security", "findingRefs": ["M1"], "devTest": "Clear", "prod": "Warning", "status": "Open", "note": "The Android release manifest permits cleartext HTTP, with no `networkSecurityConfig` narrowing it and no certificate pinning behind it (G1). A half-day fix." },
+    { "gate": "Credential storage", "findingRefs": [], "devTest": "Clear", "prod": "Clear", "status": "Pass", "note": "Verified: the session token is held in `expo-secure-store`, i.e. the platform keychain and keystore. The invariant both web applications violate." },
+    { "gate": "Supported platform versions", "findingRefs": [], "devTest": "Clear", "prod": "Clear", "status": "Pass", "note": "Closed since July. Expo 54, React Native 0.81.5, React 19, TypeScript 5.9 — all current, and compliant with Google Play's API-level and 16KB requirements." },
+    { "gate": "Reproducible release artefact", "findingRefs": ["M2", "M6"], "devTest": "Warning", "prod": "Warning", "status": "Open", "note": "No build automation and no commit-to-artefact record; releases cut by hand from a long-lived fix branch. Warns rather than blocks because nothing is currently broken, but it is the condition most worth attaching to the next release." },
+    { "gate": "Pre-release verification", "findingRefs": ["M3"], "devTest": "Warning", "prod": "Warning", "status": "Open", "note": "Zero tests, so a six-major-version framework upgrade reached two app stores verified only by hand. Store distribution makes a bad release expensive to retract." },
+    { "gate": "Actionable crash reports", "findingRefs": ["M5"], "devTest": "Clear", "prod": "Warning", "status": "Needs-runtime-check", "note": "Sentry is correctly integrated; no source-map upload is configured in the repository, so release traces are probably unsymbolicated. A release build would confirm." },
+    { "gate": "Device permission hygiene", "findingRefs": [], "devTest": "Clear", "prod": "Clear", "status": "Pass", "note": "Verified improved: broad media permissions were deliberately dropped this cycle for Google Play's photo policy." }
+  ],
+
+  "phases": [
+    { "number": 1, "name": "Stabilisation & Delivery Foundation", "objective": "Close the transport flaw and give this application a pipeline. M1 is half a day and should ship with the next release regardless. M2 is the substantial item and sits here rather than later because it is the precondition for everything else — including verifying the upgrade that has already reached the stores — and because it is where the symbolication and release-traceability fixes naturally belong." },
+    { "number": 2, "name": "Verification", "objective": "Put an automated check under the application before the next forced framework upgrade arrives. Start with the pure utilities, including the timesheet hours calculation changed this cycle, then cover the authentication and timesheet-submission flows, and run all of it in the pipeline built in Phase 1." },
+    { "number": 3, "name": "Resilience Hardening", "objective": "Finish the offline story that connectivity detection started — retry, a persisted submission queue and cached reads — so a candidate on a ward with patchy signal does not lose work. Then consider certificate pinning, once M1 has restored the platform's own transport protection." }
+  ],
+
+  "architecturalRecommendations": [
+    { "aspect": "Transport security", "current": "`usesCleartextTraffic=\"true\"` on the release manifest's application element, with no `networkSecurityConfig` and no pinning.", "recommended": "Platform TLS enforcement in release builds, with any development exception scoped to debug.", "recommendation": "Remove the attribute from `src/main` and, if a local HTTP server is still needed, add a `network_security_config.xml` for that host referenced only from a debug-variant manifest." },
+    { "aspect": "Build and release", "current": "No eas.json, no CI, no fastlane; three version numbers bumped by hand; releases cut from a long-lived fix branch.", "recommended": "Reproducible builds from a tagged commit on the integration branch, submitted by pipeline.", "recommendation": "Add `eas.json` with development, preview and production profiles, a CI job running type-check and lint, and `eas submit` for delivery. Derive the Android `versionCode` and iOS version from the single `package.json` version." },
+    { "aspect": "Verification", "current": "Zero tests and no test runner, on a codebase that just crossed six major Expo versions.", "recommended": "Automated coverage of the pure logic and the two journeys that matter most.", "recommendation": "Add jest-expo, unit-test the validation and timesheet-hours utilities first, then React Native Testing Library coverage of authentication and timesheet submission. Gate it in the Phase 1 pipeline." },
+    { "aspect": "Crash diagnostics", "current": "Sentry correctly initialised behind a service wrapper, with no source-map or dSYM upload configured.", "recommended": "Symbolicated release traces tied to a release name.", "recommendation": "Add the Sentry Expo plugin with a build-time auth token and a release name derived from the app version, as part of the Phase 1 pipeline. Verify with a deliberate crash in a release build." },
+    { "aspect": "Offline behaviour", "current": "Connectivity detected and surfaced; no retry, queue or cached reads, so interrupted work is lost.", "recommended": "Work that survives a loss of signal.", "recommendation": "Add retry with backoff for idempotent reads, a persisted queue for timesheet submissions and shift acceptances, and a cached read path so the application opens usefully offline." }
+  ],
+
+  "suggestions": [
+    { "suggestion": "Ship the cleartext-HTTP fix with the next release regardless of anything else", "description": "It is half a day, it needs no pipeline and no tests, and it restores a platform protection that Android provides by default. The compliance pass that touched this manifest for API levels and permissions was the natural moment and passed it by; the next release is the next natural moment.", "impact": "Removes the only real transport weakness in the estate's best-secured client, for the cost of deleting an attribute." },
+    { "suggestion": "Add eas.json before the next framework upgrade, not after", "description": "Google Play's target-API cadence guarantees another forced upgrade within a year. The last one crossed six major Expo versions, verified by hand and shipped from a laptop. A build configuration and a type-check job would make the next one materially less risky, and both are prerequisites for the tests in Phase 2.", "impact": "Turns the next mandatory upgrade from an act of care into a repeatable process." },
+    { "suggestion": "Test the timesheet hours calculation specifically", "description": "This cycle included \"fix: correct timesheet break units and weekly total hours\". Hours feed rate cards, which feed invoices, which the companion database report shows are stored as floating-point values — so an arithmetic change here propagates into money. It is pure logic and the cheapest possible first test.", "impact": "Pins a calculation that reaches billing, and gives the test suite its first and most defensible case." },
+    { "suggestion": "Reconcile the three version numbers", "description": "`package.json` says 1.0.0, the commits say 1.0.21, and the Android versionCode says 51. With no build pipeline these are the only provenance a store artefact has, and they disagree.", "impact": "Makes it possible to tell what is in a release without asking the person who built it." },
+    { "suggestion": "Read the secure-store choice across to the web applications", "description": "This team solved the credential-storage question correctly and kept it solved through a major upgrade. Both web applications hold the same token in `localStorage` and each carries it as a P0. The reasoning is transferable even though the mechanism is not.", "impact": "Gives the web teams an in-house precedent for the token work their own reports recommend." }
+  ],
+
+  "capabilities": [
+    { "practice": "Credential storage in the platform keystore", "status": "good", "notes": "`expo-secure-store` 15.0.8 holds the session token — the iOS keychain and Android keystore, not application-readable storage." },
+    { "practice": "Supported framework and dependency versions", "status": "good", "notes": "Expo 54, React Native 0.81.5, React 19, TypeScript 5.9, Sentry 7.2 — upgraded this cycle from Expo 48 / RN 0.71, closing the July finding." },
+    { "practice": "Device permission minimisation", "status": "good", "notes": "`READ_MEDIA_IMAGES` and `READ_MEDIA_VIDEO` deliberately dropped this cycle for Google Play's photo policy." },
+    { "practice": "Transport security enforced in release builds", "status": "absent", "notes": "`usesCleartextTraffic=\"true\"` on the release manifest with no `networkSecurityConfig` (M1), and no certificate pinning behind it (G1)." },
+    { "practice": "Crash reporting integrated", "status": "good", "notes": "Sentry initialised in a dedicated `CrashlyticsService` with an explicit `captureException` wrapper taking context." },
+    { "practice": "Symbolicated release crash traces", "status": "absent", "notes": "No `sentry.properties` and no source-map or dSYM upload configuration in the repository (M5)." },
+    { "practice": "Connectivity awareness", "status": "partial", "notes": "`netinfo` detection surfaced through `NoInternetModal` and `useFlowRun` — new this cycle. No retry, queue or cached reads (G2)." },
+    { "practice": "Automated tests", "status": "absent", "notes": "Zero test files, no test script and no test runner in the dependency surface (M3)." },
+    { "practice": "Reproducible builds", "status": "absent", "notes": "No `eas.json`, no CI, no fastlane; builds produced on a developer machine (M2)." },
+    { "practice": "Release traceability", "status": "absent", "notes": "Releases cut from a long-lived `fix/` branch, three version numbers maintained independently and disagreeing, no commit-to-artefact record (M6)." },
+    { "practice": "Offline work preservation", "status": "absent", "notes": "An interrupted timesheet submission is lost rather than queued; no retry and no persisted queue (G2)." },
+    { "practice": "Testable code structure", "status": "good", "notes": "Pure validation utilities, crash reporting behind a service, connectivity behind a hook — the codebase is arranged for the tests it lacks." }
+  ],
+
+  "architecturalNarrative": "This is the application the rest of the estate should be measured against, and the refresh strengthens that. It made the right call on the question that produces two P0s in each of the Novello web applications — the session credential lives in `expo-secure-store`, the platform keychain, rather than in storage any script can read — and it has kept that choice intact through a major upgrade. Crash reporting is behind a service boundary with explicit capture calls. Device permissions were actively narrowed this cycle rather than accumulating. Connectivity loss is detected and explained to the candidate instead of surfacing as an opaque failure.\n\nAnd the one finding that was squarely about decay is closed. Expo moved six major versions, React Native ten minors, React to 19 and TypeScript to 5.9. Google Play's target-API and 16KB page-size requirements forced the issue, but the response went well beyond the minimum the store would have accepted — the whole dependency surface is now current. That is the largest single improvement found anywhere in this round of refreshes, and it is worth saying plainly because the same cycle in the sibling web applications closed nothing at all.\n\nWhat holds this application at a conditional approval is that none of it was verified by anything other than a person. There are no tests — not few, none — and no build automation of any kind: no `eas.json`, no CI, no fastlane, no test script. So an upgrade crossing six major framework versions and 102 files was checked by opening the app, built on somebody's machine, and submitted to two app stores by hand, with the version number bumped separately in three places and the current HEAD sitting on a long-lived branch called `fix/play-store-api36-16kb` that `develop` has been merged into. A release-handoff document was written during this period and deleted two commits later, which is a fair summary of where the process lives.\n\nThe practical consequence is cumulative rather than immediate. Nothing is broken today. But Google Play's annual target-API cadence guarantees another forced upgrade, and the next one will be verified the same way unless something changes. Meanwhile a crash report arriving against version 1.0.21 cannot be symbolicated, because no source-map upload is configured, and cannot be traced to a commit, because nothing recorded which commit was built. The engineering judgement in this codebase is the best in the estate; the scaffolding around it is the weakest, and those two facts are closer to related than they look — a team this careful has been able to get away without a pipeline, right up to the point where it needs one.",
+
+  "lookingAhead": "Two things should happen before the next store submission, and neither is large. Remove `usesCleartextTraffic` from the release manifest — half a day, no dependencies, and it restores a protection Android gives for free. And add an `eas.json` with build profiles plus a type-check job, which is the smallest change that makes a build reproducible and gives the symbolication and version-numbering fixes somewhere to live. Together with the release-traceability tidy-up that is Phase 1 at ten and a half days.\n\nPhase 2 is the tests, and the argument for them is the upgrade that just happened rather than any abstract coverage target. Start with the timesheet hours calculation changed this cycle: it is pure logic, it is the cheapest possible first test, and the companion database report gives a concrete reason to pin it — hours feed rate cards, which feed invoices, which are stored as floating-point values. Then the authentication and submission flows. The codebase is already arranged for this, with pure utilities and service boundaries, so the first suite will cost less here than in any of the sibling applications.\n\nThe resilience work in Phase 3 is genuinely deferrable, and connectivity detection has already taken the sharpest edge off it — a candidate now knows they are offline. Finishing it means their work survives being offline, which for someone completing a timesheet on a ward with patchy signal is the difference between an inconvenience and lost work. Certificate pinning belongs after M1, not before it: there is no sense adding a second transport layer while the first one is switched off."
+}

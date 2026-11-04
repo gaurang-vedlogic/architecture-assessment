@@ -1,0 +1,1057 @@
+{
+  "meta": {
+    "app": "industrifinans",
+    "productName": "Industrifinans Platform",
+    "client": "Bjørn André Aaslund",
+    "org": "Industrifinans",
+    "repository": "industrifinans/platform",
+    "branch": "main",
+    "commit": "a41c9f2",
+    "version": "v2.4.0",
+    "stack": "React 18 / MUI frontend · Python FastAPI backend · Azure Functions · Azure SQL · Azure Key Vault",
+    "reviewDate": "2026-05-28",
+    "assessmentType": "Technical Landscape Assessment & Recommendations Report",
+    "documentStatus": "CONFIDENTIAL",
+    "scope": "Single-context manual static review of the deployed main branch covering the React frontend, the FastAPI backend, the Azure Functions layer and the surrounding data pipeline. Architecture, security and scalability were assessed against the rules/ catalog. No automated SAST, dependency scanning or dynamic testing was performed."
+  },
+  "verdict": {
+    "prod": "BLOCK_RELEASE",
+    "devTest": "APPROVE_WITH_CONDITIONS",
+    "summary": "The platform is functional and actively delivering value, and the team's logging discipline is genuinely better than most codebases of this age. Production is nonetheless blocked by four reachable security defects: SQL built by string interpolation across several backend modules, Azure credentials committed to frontend source, session tokens held in `localStorage` where any XSS can read them, and certificate validation disabled on every SQL connection. None of these block continued development on dev/test, where the fixes should be verified.",
+    "blockers": [
+      {
+        "text": "SQL injection via f-string interpolation reachable from public API endpoints",
+        "findingId": "F1"
+      },
+      {
+        "text": "Azure credentials committed to frontend source and shipped in the browser bundle",
+        "findingId": "F2"
+      },
+      {
+        "text": "Certificate validation disabled on all SQL connections (`TrustServerCertificate=True`)",
+        "findingId": "F4"
+      },
+      {
+        "text": "Auth tokens stored in `localStorage`, readable by any injected script",
+        "findingId": "F3"
+      }
+    ]
+  },
+  "objective": {
+    "narrative": "To assess the current state of the Industrifinans platform through a structured review of the frontend, backend, Azure Functions layer and overall architecture. The engagement focused on identifying technical gaps, risks and performance bottlenecks. Based on the findings, clear and actionable improvement recommendations were defined. The outcome is a practical roadmap to improve platform stability, scalability and delivery efficiency.",
+    "metrics": [
+      {
+        "value": "4",
+        "label": "Layers Assessed",
+        "detail": "Frontend · Backend · Database · Infrastructure"
+      },
+      {
+        "value": "18",
+        "label": "Total Findings",
+        "detail": "P0=4  P1=11  P2=3"
+      },
+      {
+        "value": "3",
+        "label": "Delivery Phases",
+        "detail": "Stabilise · Harden · Govern"
+      },
+      {
+        "value": "58",
+        "label": "Est. Total Effort",
+        "detail": "Man-days across all phases"
+      }
+    ]
+  },
+  "executiveSummary": "Industrifinans is a working platform carrying the structural debt typical of a system that grew feature-first under delivery pressure. The frontend is a conventional React/MUI application; the backend is a FastAPI service in which most files combine HTTP handling, business rules, SQL construction and response formatting in the same functions. There is no service or repository layer, and the largest module exceeds 1,400 lines.\n\nThe headline problems are security, and they are reachable. SQL is assembled with f-strings in several modules using values that arrive directly from query parameters. Azure credentials sit in committed frontend source, which means they ship to every browser that loads the application. Session tokens are held in `localStorage`, so any script injection yields a live session. Certificate validation is disabled on every SQL connection, making the transport encryption decorative. These four are the production blockers.\n\nBehind them sits a consistent scalability pattern: work that should happen once at startup happens per request instead. A SQLAlchemy engine is constructed on each call, Key Vault is queried on every connection, and an event listener is registered every time a helper runs, so handler count grows with uptime. Individually each is a small fix; together they set the ceiling on what the platform can serve.\n\nObservability is the genuine strength. Logging is present throughout and structured enough to be useful — it is the one dimension scoring above 'Developing', and it is why several of these findings could be confirmed from evidence rather than inferred.",
+  "scorecard": {
+    "targetLabel": "target 4.0",
+    "narrative": "Every dimension except observability sits at or below 'Developing'. The scores are dragged down less by exotic defects than by the absence of enforcement — no layer boundary, no test suite, no scanner and no gate that would have caught any of this before it shipped.",
+    "dimensions": [
+      {
+        "id": "architecture",
+        "label": "Architecture Quality",
+        "current": 2.5,
+        "target": 4,
+        "keyGap": "No service or repository layer — handlers own SQL, business rules and response shaping. Duplicate class definitions, copy-pasted endpoints, magic numbers throughout, and a 1,400-line module that contains the app bootstrap alongside its business logic (F5, F9, F13)."
+      },
+      {
+        "id": "security",
+        "label": "Security Posture",
+        "current": 2,
+        "target": 4.5,
+        "keyGap": "Four reachable P0s: SQL injection via f-strings (F1), Azure credentials in frontend source (F2), tokens in localStorage (F3), and certificate validation disabled on every SQL connection (F4). No input validation on API endpoints and no security scanning in the pipeline."
+      },
+      {
+        "id": "scalability",
+        "label": "Scalability Readiness",
+        "current": 2.5,
+        "target": 4,
+        "keyGap": "Per-request engine construction (F6), Key Vault queried on every connection (F7), event listeners accumulating per call (F8), no connection pool configuration, no timeouts on outbound calls, and full-table reads serving paginated screens (F11, F14)."
+      },
+      {
+        "id": "maintainability",
+        "label": "Code Maintainability",
+        "current": 2,
+        "target": 3.5,
+        "keyGap": "No automated tests of any kind. Large multi-responsibility functions, dead code and unreachable exception handlers, and API-calling logic repeated across components with no shared client (F13, F15, F16)."
+      },
+      {
+        "id": "observability",
+        "label": "Observability & Monitoring",
+        "current": 3,
+        "target": 4,
+        "keyGap": "Logging is present and consistent throughout — a real strength. Weakened by log lines that omit the record or correlation identifier needed to trace a specific failure, and by pipeline activities with no failure handling or alerting (F12, F17)."
+      },
+      {
+        "id": "devops",
+        "label": "DevOps Maturity",
+        "current": 2,
+        "target": 3.5,
+        "keyGap": "A build pipeline exists but runs no tests, no type check and no dependency audit. No branch protection on main, no infrastructure as code, and no rehearsed rollback path (F18)."
+      },
+      {
+        "id": "data",
+        "label": "Data Integrity & DB Health",
+        "current": 2,
+        "target": 4,
+        "keyGap": "A full-table DELETE precedes the INSERT in the refresh routine with no enclosing transaction, so a mid-operation failure empties the table (F10). No connection pooling configuration and no verified restore drill."
+      }
+    ]
+  },
+  "capabilities": [
+    {
+      "practice": "Auth enforced on API routes",
+      "status": "partial",
+      "notes": "Authentication is applied, but authorisation is per-handler and inconsistent; several endpoints scope by an identifier taken from the request rather than the verified token."
+    },
+    {
+      "practice": "SQL parameterised (bound values)",
+      "status": "absent",
+      "notes": "Bound in some modules, f-string interpolated in others — see F1. The bound modules prove the team knows the correct pattern."
+    },
+    {
+      "practice": "Secrets externalised from source",
+      "status": "absent",
+      "notes": "Backend secrets are in Key Vault, but the frontend carries committed Azure credentials that ship in the browser bundle (F2)."
+    },
+    {
+      "practice": "Transport security enforced",
+      "status": "absent",
+      "notes": "`TrustServerCertificate=True` on every SQL connection string (F4)."
+    },
+    {
+      "practice": "Layered architecture (handler/service/repository)",
+      "status": "absent",
+      "notes": "No service or repository layer anywhere; handlers own the full stack of concerns (F5)."
+    },
+    {
+      "practice": "Connection pooling configured",
+      "status": "absent",
+      "notes": "Engine constructed per request, so no pool is reused (F6). No pool sizing anywhere."
+    },
+    {
+      "practice": "Structured logging present",
+      "status": "good",
+      "notes": "Consistent logging throughout the backend and the Functions layer — the strongest practice in the codebase."
+    },
+    {
+      "practice": "Correlation IDs across the call chain",
+      "status": "absent",
+      "notes": "No request ID generated at the edge or propagated; a client-reported failure cannot be tied to a server log line (F12)."
+    },
+    {
+      "practice": "Automated test suite",
+      "status": "absent",
+      "notes": "No test directory and no test framework in either project."
+    },
+    {
+      "practice": "CI runs quality gates",
+      "status": "partial",
+      "notes": "The pipeline builds and deploys but runs no tests, no type check and no dependency audit (F18)."
+    },
+    {
+      "practice": "Client-side error boundaries",
+      "status": "absent",
+      "notes": "No error boundary anywhere; a render exception blanks the entire application."
+    },
+    {
+      "practice": "Request cancellation on unmount",
+      "status": "absent",
+      "notes": "No effect returns an abort; state is written after navigation away."
+    },
+    {
+      "practice": "Transactional multi-step writes",
+      "status": "absent",
+      "notes": "The refresh routine deletes then inserts outside a transaction (F10)."
+    },
+    {
+      "practice": "Pipeline failure handling",
+      "status": "absent",
+      "notes": "The monthly reporting pipeline has no failure path, retry policy or alert (F17)."
+    }
+  ],
+  "systemModel": {
+    "purpose": "Industrifinans is a portfolio and financial reporting platform for an investment management business. It holds client portfolio positions, transaction history and generated financial reports. The domain is financial data with named individual clients, which raises the blast radius of both the injection and the credential findings well above what an equivalent internal tool would carry.",
+    "actors": "Anonymous (login surface only) · authenticated staff users (Azure AD, no role differentiation observed) · the Azure Functions identity (scheduled report generation) · Azure SQL · Azure Key Vault. The realistic attacker is an authenticated staff user, or anyone who has obtained a session through the `localStorage` token exposure or the committed frontend credentials — both of which are reachable without insider access.",
+    "dataFlows": "Browser → React app (token from `localStorage`) → FastAPI endpoint → handler function (validation, business rules, SQL construction and response shaping in one place) → SQLAlchemy engine constructed for this request → Key Vault lookup for the connection secret → Azure SQL. Separately: Data Factory pipeline → Azure Functions → the same database, on a monthly schedule.",
+    "invariants": [
+      {
+        "statement": "No request path reaches SQL with an unbound user-controlled value",
+        "status": "VIOLATED",
+        "findingId": "F1",
+        "note": "Several modules interpolate query parameters directly into the statement."
+      },
+      {
+        "statement": "No credential is readable by a client of the system",
+        "status": "VIOLATED",
+        "findingId": "F2",
+        "note": "Azure credentials are committed to frontend source and shipped in the bundle."
+      },
+      {
+        "statement": "A session token cannot be read by injected script",
+        "status": "VIOLATED",
+        "findingId": "F3"
+      },
+      {
+        "statement": "Every database connection validates the server certificate",
+        "status": "VIOLATED",
+        "findingId": "F4"
+      },
+      {
+        "statement": "A multi-step business write either completes fully or leaves no trace",
+        "status": "VIOLATED",
+        "findingId": "F10",
+        "note": "The refresh routine deletes the table before inserting, outside any transaction."
+      },
+      {
+        "statement": "Error responses never leak internal structure",
+        "status": "HOLDS",
+        "note": "The global handler returns a flat message; no stack trace reaches the client."
+      },
+      {
+        "statement": "Every write is attributable to the authenticated user who made it",
+        "status": "CHECK",
+        "note": "User identity is logged on most write paths, but the Functions layer writes under the service identity with no originating-user record."
+      },
+      {
+        "statement": "Resource acquisition is bounded per request",
+        "status": "VIOLATED",
+        "findingId": "F6",
+        "note": "Engine construction per request means connection use grows with concurrency rather than being pooled."
+      },
+      {
+        "statement": "Money is never computed or stored in floating point",
+        "status": "HOLDS",
+        "note": "Monetary columns use `DECIMAL`; calculations use `Decimal` in Python."
+      },
+      {
+        "statement": "Scheduled work reports its own failure",
+        "status": "VIOLATED",
+        "findingId": "F17"
+      }
+    ]
+  },
+  "threatModel": "The asset is a financial platform holding named clients' portfolio positions and transaction history. Function-level authentication exists but role separation does not, so any authenticated staff account effectively reaches the full dataset — that is close to by design for a small firm and is not itself the finding. The interesting attacks are therefore credential acquisition and injection. Two paths give an external attacker a foothold without insider access: the Azure credentials committed to frontend source (F2), which any visitor can extract from the bundle, and the `localStorage` token exposure (F3), which converts any script injection into a live session. From an authenticated position the SQL injection in F1 provides read and write access beyond what any endpoint exposes. The disabled certificate validation in F4 makes an on-path attacker viable on any untrusted network segment.",
+  "coverage": {
+    "method": "Single-context manual static review of the deployed `main` branch. No SAST, secret scanning, dependency audit or dynamic testing was run — all findings were confirmed by reading code. Reviewed in execution order: entry point, middleware, router, handler, data access.",
+    "size": "≈38,400 non-test lines across 214 files (frontend TypeScript/TSX and backend Python, excluding `node_modules`, `dist` and generated migrations).",
+    "deepRead": [
+      "Backend: `main.py`, `ifwebtable.py`, `db/connection.py`, `db/keyvault.py`, and the four largest domain modules",
+      "Frontend: `src/api/`, `src/auth/`, the routing configuration, and the six highest-traffic page components",
+      "All SQL construction sites identified by the interpolation sweep",
+      "Azure Functions host configuration and the monthly reporting pipeline definition",
+      "The build and deployment pipeline definitions"
+    ],
+    "grepSwept": [
+      "SQL construction: f-strings, `.format()`, `%` formatting and `+` concatenation adjacent to SQL keywords",
+      "Secret patterns: `key`, `secret`, `password`, `connectionstring`, `AccountKey=` across all tracked files",
+      "React effect hooks without a cleanup return",
+      "`TrustServerCertificate`, `verify=False`, `rejectUnauthorized`",
+      "`create_engine`, `event.listens_for`, `gc.collect`, `os.chdir`"
+    ],
+    "notRead": [
+      "Generated database migration files",
+      "Third-party vendored code under `lib/external/`",
+      "The historical report templates directory (not reachable from any live code path)"
+    ],
+    "caveats": [
+      "Transaction boundaries were sampled across the write paths rather than exhaustively audited — F10 is confirmed, but other multi-step writes may share the pattern.",
+      "Authorisation was assessed by reading the handlers, not by exercising the API. Endpoints that scope by a request-supplied identifier are noted, but tenant isolation was not tested at runtime.",
+      "No dependency vulnerability scan was performed, so the current CVE exposure is unknown. This is the single cheapest gap to close and should be the first action in Phase 1.",
+      "The Azure Functions layer was reviewed statically; its runtime behaviour under concurrent invocation was not observed."
+    ]
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "title": "SQL injection via f-string interpolation in multiple queries",
+      "ruleId": "SEC-001",
+      "group": "Backend",
+      "layer": "Backend",
+      "dimension": "security",
+      "criticality": "High",
+      "priority": "P0",
+      "phase": 1,
+      "gate": "blocks-prod",
+      "confidence": "Confirmed",
+      "instances": 11,
+      "claim": "Query strings are assembled with Python f-strings using values that arrive directly from request query parameters, so a caller controls the statement rather than the value.",
+      "evidence": [
+        {
+          "file": "backend/ifwebtable.py",
+          "line": 412,
+          "snippet": "query = f\"SELECT * FROM Portfolio WHERE ClientId = '{client_id}' AND Period = '{period}'\"",
+          "note": "`client_id` and `period` both come from the query string with no validation."
+        },
+        {
+          "file": "backend/reports/market_value.py",
+          "line": 188,
+          "note": "Same pattern in the transaction estimate query."
+        },
+        {
+          "file": "backend/db/queries.py",
+          "line": 94,
+          "note": "Interpolated `ORDER BY` built from a request parameter."
+        }
+      ],
+      "reasoning": "Violates the invariant that no request path reaches SQL with an unbound user-controlled value. The application connects with an account holding DDL rights (F4 evidence), so the reachable impact extends past reading to schema modification.",
+      "reproduction": "Request `/api/portfolio?client_id=1' OR '1'='1` and observe rows returned for every client, not the one requested.",
+      "impact": "Improves database security by enforcing parameterised queries, preventing unauthorised query manipulation, and reducing risk of data breaches or database compromise.",
+      "refutation": "Checked whether an upstream validator constrains these parameters — the endpoints accept them as bare `str` with no Pydantic model, so nothing narrows them. Also confirmed that the interpolation is not limited to server-static values: unlike the schema-prefix interpolations elsewhere in the file, these operands originate in the request. Survives.",
+      "remediation": "Replace interpolation with bound parameters across all eleven sites. For the dynamic `ORDER BY`, map the request value through a fixed allow-list of sortable columns rather than binding, since parameters cannot bind identifiers.",
+      "sampleFix": "query = text(\"SELECT * FROM Portfolio WHERE ClientId = :client_id AND Period = :period\")\nresult = conn.execute(query, {\"client_id\": client_id, \"period\": period})",
+      "effortDays": 7,
+      "role": "Backend Engineer"
+    },
+    {
+      "id": "F2",
+      "title": "Hardcoded Azure credentials in frontend source",
+      "ruleId": "SEC-002",
+      "group": "Frontend",
+      "layer": "Frontend",
+      "dimension": "security",
+      "criticality": "High",
+      "priority": "P0",
+      "phase": 1,
+      "gate": "blocks-prod",
+      "confidence": "Confirmed",
+      "claim": "Azure storage credentials and a client secret are committed to frontend source and bundled into the JavaScript served to every visitor.",
+      "evidence": [
+        {
+          "file": "frontend/src/config/azure.ts",
+          "line": 8,
+          "snippet": "export const AZURE_STORAGE_KEY = 'DefaultEndpointsProtocol=https;AccountKey=…';",
+          "note": "Present in git history as well as HEAD."
+        },
+        {
+          "file": "frontend/.env.production",
+          "line": 3,
+          "note": "Tracked in version control; values prefixed for build-time inlining."
+        }
+      ],
+      "reasoning": "Anything reaching the bundle is public by construction. This is not a hypothetical exposure — it is served to every browser that loads the application, and it predates the current commit in history, so removal from HEAD does not contain it.",
+      "reproduction": "Load the application, open the bundle in browser dev tools, and search for `AccountKey`.",
+      "impact": "Reduces security risk, prevents credential leakage, improves compliance, and enables safer deployments.",
+      "refutation": "Checked whether the key is scoped to a read-only public container that would make exposure acceptable — it is an account-level key with write access. Survives.",
+      "remediation": "Rotate the exposed credentials immediately; removal from source does not revoke them. Move storage access behind an authenticated backend endpoint that issues short-lived signed URLs. Add a secret scanner to the pipeline and purge the values from git history.",
+      "effortDays": 1,
+      "role": "Frontend Engineer"
+    },
+    {
+      "id": "F3",
+      "title": "Auth token stored in localStorage",
+      "ruleId": "SEC-003",
+      "group": "Frontend",
+      "layer": "Frontend",
+      "dimension": "security",
+      "criticality": "High",
+      "priority": "P0",
+      "phase": 1,
+      "gate": "blocks-prod",
+      "confidence": "Confirmed",
+      "claim": "The authentication library is configured with `cacheLocation: \"localStorage\"`, so any script running in the page can read a live access token.",
+      "evidence": [
+        {
+          "file": "frontend/src/auth/msalConfig.ts",
+          "line": 14,
+          "snippet": "cache: { cacheLocation: \"localStorage\", storeAuthStateInCookie: false }"
+        }
+      ],
+      "reasoning": "`localStorage` is readable by any JavaScript in the origin, including third-party dependency code. Combined with the absence of a Content Security Policy, a single injection yields a silently exfiltrated session.",
+      "impact": "Reduces account-takeover risk by keeping session tokens out of JavaScript-readable storage and limiting the blast radius of any cross-site scripting flaw.",
+      "refutation": "Considered whether a strict CSP already mitigates this — no CSP header is set on any response, so nothing constrains script execution. Survives.",
+      "remediation": "Move to `sessionStorage` with in-memory token handling and silent renewal as the interim step, and add a Content Security Policy. The durable fix is `HttpOnly; Secure; SameSite` cookies issued by the backend.",
+      "effortDays": 1,
+      "role": "Frontend Engineer"
+    },
+    {
+      "id": "F4",
+      "title": "TrustServerCertificate enabled on all SQL connections",
+      "ruleId": "SEC-006",
+      "group": "Backend",
+      "layer": "Infrastructure",
+      "dimension": "security",
+      "criticality": "High",
+      "priority": "P0",
+      "phase": 1,
+      "gate": "blocks-prod",
+      "confidence": "Confirmed",
+      "claim": "Every SQL connection string sets `TrustServerCertificate=True`, disabling certificate validation on the database connection.",
+      "evidence": [
+        {
+          "file": "backend/db/connection.py",
+          "line": 27,
+          "snippet": "conn_str = f\"…;Encrypt=yes;TrustServerCertificate=True;\""
+        },
+        {
+          "file": "functions/shared/db.py",
+          "line": 19,
+          "note": "Same setting in the Functions layer."
+        }
+      ],
+      "reasoning": "Certificate validation is what makes the encryption meaningful. With it disabled the connection is encrypted to whatever presents itself, so an on-path attacker on any segment between the application and Azure SQL can read and modify traffic.",
+      "impact": "Improves transport security by enforcing proper certificate validation, ensuring encrypted and trusted database connections, and reducing risk of intercepted or tampered communication.",
+      "refutation": "Checked whether a private CA or self-signed certificate makes this necessary — the target is Azure SQL, which presents a publicly trusted certificate. There is no technical reason for the bypass. Survives.",
+      "remediation": "Remove `TrustServerCertificate=True` from every connection string in both projects and verify connectivity in a non-production environment first.",
+      "effortDays": 1,
+      "role": "Backend Engineer"
+    },
+    {
+      "id": "F5",
+      "title": "Route handlers own validation, business logic, SQL and response shaping",
+      "ruleId": "ARC-001",
+      "group": "Backend",
+      "layer": "Backend",
+      "dimension": "architecture",
+      "criticality": "High",
+      "priority": "P1",
+      "phase": 1,
+      "confidence": "Confirmed",
+      "claim": "No service or repository layer exists. Handlers construct SQL, apply business rules, call external services and format responses in a single function.",
+      "evidence": [
+        {
+          "file": "backend/ifwebtable.py",
+          "line": 380,
+          "note": "`estimate_market_value_transactions` is 412 lines and performs all four concerns."
+        },
+        {
+          "file": "backend/reports/on_demand.py",
+          "line": 61,
+          "note": "`create_report_on_demand` is 254 lines with the same shape."
+        }
+      ],
+      "reasoning": "Nothing in these functions can be exercised in isolation, which is the direct cause of the absent test suite (F13) — there is no seam at which to write a test.",
+      "impact": "Improves maintainability, scalability, readability, and unit testability. Reduces coupling between layers.",
+      "remediation": "Introduce handler → service → repository. Start with the two largest functions above; extract the SQL into repository methods first, since that is also where the F1 fix lands.",
+      "effortDays": 8,
+      "role": "Backend Engineer",
+      "rationale": "Kept in Phase 1 despite being P1 because the extraction creates the seam that the F1 parameterisation work needs; doing them together avoids touching the same code twice."
+    },
+    {
+      "id": "F6",
+      "title": "SQLAlchemy engine created per request",
+      "ruleId": "PERF-002",
+      "group": "Backend",
+      "layer": "Backend",
+      "dimension": "scalability",
+      "criticality": "High",
+      "priority": "P1",
+      "phase": 1,
+      "confidence": "Confirmed",
+      "claim": "`create_engine` is called inside the per-request connection helper rather than once at application startup, so no connection pool is ever reused.",
+      "evidence": [
+        {
+          "file": "backend/db/connection.py",
+          "line": 34,
+          "snippet": "def get_connection():\n    engine = create_engine(conn_str)  # constructed per call\n    return engine.connect()"
+        }
+      ],
+      "reasoning": "Engine construction carries handshake, TLS negotiation and pool setup. Because each request builds its own, the pool is a pool of one and connection count scales linearly with concurrency until the database refuses.",
+      "impact": "Reduces latency, improves throughput, optimizes connection pooling, and lowers resource consumption.",
+      "remediation": "Construct one engine during application startup with explicit `pool_size`, `max_overflow` and `pool_pre_ping`, and inject it. Yield connections per request from that engine.",
+      "sampleFix": "engine = create_engine(conn_str, pool_size=10, max_overflow=20, pool_pre_ping=True)\n# created once at startup, injected into request handlers",
+      "effortDays": 4,
+      "role": "Backend Engineer"
+    },
+    {
+      "id": "F7",
+      "title": "Key Vault queried on every connection creation",
+      "ruleId": "INF-AZ-001",
+      "group": "Backend",
+      "layer": "Backend",
+      "dimension": "scalability",
+      "criticality": "High",
+      "priority": "P1",
+      "phase": 1,
+      "confidence": "Confirmed",
+      "claim": "The database secret is fetched from Azure Key Vault inside the connection helper, so every request performs a network round trip to a rate-limited service before it can query anything.",
+      "evidence": [
+        {
+          "file": "backend/db/keyvault.py",
+          "line": 22,
+          "note": "`get_secret` called from `get_connection()` with no caching layer."
+        }
+      ],
+      "reasoning": "Key Vault is network-bound and throttled. Under load these calls become the dominant latency and then begin failing, converting a performance problem into an availability one.",
+      "impact": "Reduces latency, avoids throttling, improves scalability, and lowers dependency on external secret fetch calls.",
+      "remediation": "Load secrets once at application startup into configuration. Add a refresh path that keeps serving the cached value if a later refresh fails.",
+      "effortDays": 4,
+      "role": "Backend Engineer"
+    },
+    {
+      "id": "F8",
+      "title": "Event listener registered on every helper invocation",
+      "ruleId": "PERF-012",
+      "group": "Backend",
+      "layer": "Backend",
+      "dimension": "scalability",
+      "criticality": "High",
+      "priority": "P1",
+      "phase": 1,
+      "confidence": "Confirmed",
+      "claim": "`event.listens_for(sql_engine, \"before_cursor_execute\")` sits inside a function that runs per request, so a new handler is attached on every call.",
+      "evidence": [
+        {
+          "file": "backend/db/connection.py",
+          "line": 51,
+          "note": "Registration inside `get_connection()`; log output shows the same statement logged N times after N requests."
+        }
+      ],
+      "reasoning": "Handlers accumulate for the process lifetime. Work per query grows linearly with uptime, which matches the reported pattern of the service becoming progressively slower until restarted.",
+      "reproduction": "Issue 50 requests, then one query, and observe the statement logged 50 times.",
+      "impact": "Single-time listener registration improves DB execution performance, prevents duplicate event triggers and logs, reduces memory overhead, and ensures stable behaviour in production.",
+      "remediation": "Register the listener once at startup, bound to the specific engine instance created in F6 rather than to the `Engine` class.",
+      "effortDays": 2,
+      "role": "Backend Engineer"
+    },
+    {
+      "id": "F9",
+      "title": "Missing connection pooling configuration",
+      "ruleId": "PERF-003",
+      "group": "Backend",
+      "layer": "Database",
+      "dimension": "scalability",
+      "criticality": "High",
+      "priority": "P1",
+      "phase": 1,
+      "confidence": "Confirmed",
+      "claim": "No pool sizing, overflow limit, recycle interval or pre-ping is configured anywhere; the engine uses library defaults.",
+      "evidence": [
+        {
+          "file": "backend/db/connection.py",
+          "line": 34,
+          "note": "`create_engine(conn_str)` with no pool arguments."
+        }
+      ],
+      "reasoning": "Compounds F6 — even after the engine is made a singleton, default sizing will not match this workload, and without `pool_pre_ping` stale connections will fail after idle periods.",
+      "impact": "Improves database scalability, optimizes connection reuse, reduces latency, and ensures stable application performance during concurrent traffic.",
+      "remediation": "Size the pool against the Azure SQL tier's connection limit and the instance count, and enable pre-ping and recycle.",
+      "effortDays": 1,
+      "role": "Backend Engineer"
+    },
+    {
+      "id": "F10",
+      "title": "Full-table DELETE before INSERT with no transaction",
+      "ruleId": "DAT-001",
+      "group": "Backend",
+      "layer": "Database",
+      "dimension": "data",
+      "criticality": "High",
+      "priority": "P1",
+      "phase": 2,
+      "confidence": "Confirmed",
+      "claim": "The portfolio refresh routine deletes every row from the target table and then inserts the recomputed set, with no enclosing transaction.",
+      "evidence": [
+        {
+          "file": "backend/reports/refresh.py",
+          "line": 77,
+          "snippet": "conn.execute(text(\"DELETE FROM PortfolioSnapshot\"))\n# … recompute …\nconn.execute(insert_stmt, rows)",
+          "note": "Separate autocommitted statements."
+        }
+      ],
+      "reasoning": "Any failure between the delete and the insert — a timeout, a computation error, a deployment restart — leaves the table empty with no automatic recovery, and this table backs client-facing reporting.",
+      "impact": "Prevents accidental data loss, improves transactional integrity, and ensures rollback safety.",
+      "remediation": "Wrap both statements in one transaction, or build into a staging table and swap atomically so the live table is never empty.",
+      "effortDays": 2,
+      "role": "Backend Engineer"
+    },
+    {
+      "id": "F11",
+      "title": "Large file responses buffered in memory and rendered synchronously",
+      "ruleId": "PERF-014",
+      "group": "Frontend",
+      "layer": "Frontend",
+      "dimension": "scalability",
+      "criticality": "High",
+      "priority": "P1",
+      "phase": 2,
+      "confidence": "Confirmed",
+      "claim": "Report downloads are proxied through the API as base64 in a JSON body, then decoded on the main thread, freezing the browser for multi-megabyte reports.",
+      "evidence": [
+        {
+          "file": "frontend/src/pages/Reports.tsx",
+          "line": 142,
+          "note": "Base64 decode and Blob construction on the main thread."
+        },
+        {
+          "file": "backend/reports/download.py",
+          "line": 58,
+          "note": "Entire file read into memory and base64-encoded into the response body."
+        }
+      ],
+      "reasoning": "Memory on the server scales with file size times concurrency, and on the client the decode blocks every interaction until it completes. Users report the application 'hanging' on large report downloads.",
+      "impact": "Improves frontend responsiveness, prevents browser freezing, and provides better download scalability using signed URLs.",
+      "remediation": "Have the backend issue a short-lived signed URL to blob storage and let the browser download directly, removing both the server buffering and the client-side decode.",
+      "effortDays": 2,
+      "role": "Full-Stack Engineer"
+    },
+    {
+      "id": "F12",
+      "title": "Log lines lack record and correlation identifiers",
+      "ruleId": "OBS-002",
+      "group": "Backend",
+      "layer": "Backend",
+      "dimension": "observability",
+      "criticality": "Medium",
+      "priority": "P2",
+      "phase": 3,
+      "confidence": "Confirmed",
+      "claim": "Logging is present throughout but many entries record only an event description, with no client, portfolio or request identifier, so a specific reported failure cannot be located.",
+      "evidence": [
+        {
+          "file": "backend/reports/on_demand.py",
+          "line": 118,
+          "snippet": "logger.error(\"Report generation failed\")",
+          "note": "No client id, report id, or exception detail."
+        }
+      ],
+      "reasoning": "The logging discipline is genuinely good — this finding is about completeness of context, not absence of logging. Without an identifier the logs confirm that failures happen but cannot answer which request failed.",
+      "impact": "Makes failures actionable by attaching the identifiers and parameters needed to reproduce and resolve them.",
+      "remediation": "Generate a correlation ID at the edge, attach it plus user and entity identifiers to a request-scoped logging context, and include the exception when logging a failure.",
+      "effortDays": 3,
+      "role": "Backend Engineer"
+    },
+    {
+      "id": "F13",
+      "title": "No automated tests of any kind",
+      "ruleId": "TST-001",
+      "group": "Cross-cutting",
+      "layer": "Backend",
+      "dimension": "maintainability",
+      "criticality": "High",
+      "priority": "P1",
+      "phase": 2,
+      "confidence": "Confirmed",
+      "claim": "Neither project contains a test directory, test framework or test script.",
+      "evidence": [
+        {
+          "file": "backend/",
+          "note": "No `tests/`, no `pytest` in dependencies, no test target in the pipeline."
+        },
+        {
+          "file": "frontend/package.json",
+          "line": 12,
+          "note": "`\"test\": \"echo \\\"no tests\\\" && exit 0\"`."
+        }
+      ],
+      "reasoning": "This is why every other finding in this report is expensive to fix: there is no safety net for the refactoring that F5 requires.",
+      "impact": "Enables safe refactoring and faster delivery by catching regressions automatically instead of relying on manual verification.",
+      "remediation": "Do not chase coverage. Add a regression test alongside each fix delivered in this roadmap, starting with the parameterised queries from F1 and the transaction boundary from F10.",
+      "effortDays": 8,
+      "role": "QA Engineer"
+    },
+    {
+      "id": "F14",
+      "title": "Full table loaded per request to serve a paginated view",
+      "ruleId": "DAT-013",
+      "group": "Backend",
+      "layer": "Backend",
+      "dimension": "scalability",
+      "criticality": "High",
+      "priority": "P1",
+      "phase": 2,
+      "confidence": "Confirmed",
+      "claim": "The client list endpoint accepts page and size parameters but loads the entire table and slices it in Python.",
+      "evidence": [
+        {
+          "file": "backend/ifwebtable.py",
+          "line": 214,
+          "snippet": "rows = conn.execute(text(\"SELECT * FROM Clients\")).fetchall()\nreturn rows[offset:offset + size]",
+          "note": "Paging parameters never reach the SQL."
+        }
+      ],
+      "reasoning": "Database work and memory scale with total table size rather than page size, so response time degrades continuously as clients are added.",
+      "impact": "Bounds each query's cost to the data actually requested, keeping response times stable as the dataset grows.",
+      "remediation": "Push `OFFSET`/`FETCH` into the query and cap the maximum page size. Add an index covering the sort column.",
+      "effortDays": 2,
+      "role": "Backend Engineer"
+    },
+    {
+      "id": "F15",
+      "title": "No shared API client — fetch logic repeated per component",
+      "ruleId": "ARC-005",
+      "group": "Frontend",
+      "layer": "Frontend",
+      "dimension": "architecture",
+      "criticality": "Medium",
+      "priority": "P2",
+      "phase": 2,
+      "confidence": "Confirmed",
+      "claim": "Components call `axios` directly, each repeating base URL construction, token attachment and error handling.",
+      "evidence": [
+        {
+          "file": "frontend/src/pages/Portfolio.tsx",
+          "line": 47,
+          "note": "One of 23 direct axios call sites across the application."
+        }
+      ],
+      "reasoning": "Any cross-cutting change — token refresh, retry, correlation headers for F12 — requires editing every call site, and the variations already differ in how they handle failure.",
+      "impact": "Improves code reusability, maintainability, and separation of concerns by centralizing API handling, simplifying error management, and making frontend architecture more scalable.",
+      "remediation": "Introduce a single API client with interceptors for auth, errors and correlation, plus per-domain service modules. Migrate call sites starting with the highest-traffic screens.",
+      "effortDays": 3,
+      "role": "Frontend Engineer"
+    },
+    {
+      "id": "F16",
+      "title": "Unreachable exception handlers and dead code",
+      "ruleId": "MNT-005",
+      "group": "Cross-cutting",
+      "layer": "Backend",
+      "dimension": "maintainability",
+      "criticality": "Medium",
+      "priority": "P2",
+      "phase": 3,
+      "confidence": "Confirmed",
+      "claim": "Several `except` blocks catch exceptions the enclosed code cannot raise, and a duplicate `portfolioData` class definition means the second silently shadows the first.",
+      "evidence": [
+        {
+          "file": "backend/ifwebtable.py",
+          "line": 622,
+          "note": "Broad handler after a specific one that already covers the reachable cases."
+        },
+        {
+          "file": "backend/models.py",
+          "line": 41,
+          "note": "`portfolioData` defined twice in the same module."
+        }
+      ],
+      "reasoning": "The handlers read as protection that does not exist, and the duplicate class means a change to the first definition has no effect — a debugging trap.",
+      "impact": "Cleaner and more maintainable codebase, improved readability, accurate exception flow understanding, and reduced debugging complexity.",
+      "remediation": "Remove the unreachable handlers and delete the shadowed class definition, updating imports to the single remaining one.",
+      "effortDays": 4,
+      "role": "Backend Engineer"
+    },
+    {
+      "id": "F17",
+      "title": "Monthly reporting pipeline has no failure handling",
+      "ruleId": "INF-AZ-004",
+      "group": "Infrastructure",
+      "layer": "Infrastructure",
+      "dimension": "observability",
+      "criticality": "Medium",
+      "priority": "P1",
+      "phase": 1,
+      "confidence": "Confirmed",
+      "claim": "The `centenvopriceexport` activity in the monthly reporting pipeline has no failure dependency, retry policy, timeout or alert.",
+      "evidence": [
+        {
+          "file": "infra/pipelines/monthly-reporting.json",
+          "line": 88,
+          "note": "Activity defined with no `dependsOn` failure branch and no `policy.retry`."
+        }
+      ],
+      "reasoning": "A failed run is visible only by opening the run history. Downstream reporting consumes whatever the table holds, so a silent failure produces wrong client-facing numbers rather than an error.",
+      "impact": "Improves pipeline reliability, enables proper error tracking and alerting, and ensures failed executions are handled gracefully without impacting downstream reporting processes.",
+      "remediation": "Add a failure dependency with a notification activity, set retry and timeout per activity, and alert on both failed runs and missed schedule triggers.",
+      "effortDays": 3,
+      "role": "DevOps Engineer"
+    },
+    {
+      "id": "F18",
+      "title": "Pipeline runs no tests, type checks or dependency audit",
+      "ruleId": "DVO-002",
+      "group": "Infrastructure",
+      "layer": "Infrastructure",
+      "dimension": "devops",
+      "criticality": "High",
+      "priority": "P1",
+      "phase": 1,
+      "confidence": "Confirmed",
+      "claim": "The build pipeline installs, builds and deploys. It runs no tests, no type check and no dependency vulnerability audit, and `main` has no branch protection.",
+      "evidence": [
+        {
+          "file": ".github/workflows/deploy.yml",
+          "line": 24,
+          "note": "Steps: checkout, install, build, deploy. No verification step."
+        },
+        {
+          "file": "repository settings",
+          "note": "Direct pushes to `main` permitted; no required reviews or status checks."
+        }
+      ],
+      "reasoning": "A green pipeline currently signals only that the code compiled. Every finding in this report reached production through it unchallenged.",
+      "impact": "Makes the pipeline's green status meaningful by ensuring every merge has actually passed the tests and quality gates.",
+      "remediation": "Add a dependency audit step first — it is the cheapest and closes the unknown CVE exposure noted in the coverage caveats. Then add type checking, then the tests from F13 as they arrive. Enable branch protection with a required review and required checks.",
+      "effortDays": 2,
+      "role": "DevOps Engineer"
+    }
+  ],
+  "refutedCandidates": [
+    {
+      "claim": "Every f-string in a SQL context is an injection vector.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "The sweep flagged 61 interpolation sites. All but eleven interpolate the schema prefix or a table-name constant, both server-static values that never originate in a request. Only the eleven cited in F1 carry request-derived operands."
+    },
+    {
+      "claim": "The `/api/health` endpoint leaks internal configuration.",
+      "verdict": "Refuted",
+      "step": 3,
+      "reasoning": "It returns a static `{\"status\": \"ok\"}` with no version, dependency state or configuration. The separate concern — that it does not actually check anything — is a shallow-probe weakness, not a disclosure, and did not meet the bar for its own finding."
+    },
+    {
+      "claim": "CORS is configured to reflect any origin.",
+      "verdict": "Refuted",
+      "step": 3,
+      "reasoning": "`allow_origins` is an explicit two-entry list per environment. The wildcard appears only in the local development configuration branch, which is not reachable in a deployed build."
+    },
+    {
+      "claim": "Monetary values are computed in floating point.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "Traced the valuation path end to end: columns are `DECIMAL(19,4)`, the ORM maps them to `Decimal`, and the arithmetic stays in `Decimal` through to serialisation. No float conversion occurs."
+    },
+    {
+      "claim": "The frontend renders API HTML without sanitisation.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "The three `dangerouslySetInnerHTML` sites all render locally-defined constant markup, not API- or user-derived content."
+    },
+    {
+      "claim": "`gc.collect()` in the report endpoint indicates a memory leak.",
+      "verdict": "Downgraded",
+      "step": 4,
+      "reasoning": "It is a symptom of the oversized in-memory working set already captured by F11 rather than a separate defect. Folded into that finding instead of being reported twice."
+    }
+  ],
+  "positivePosture": [
+    {
+      "title": "Consistent logging discipline",
+      "detail": "Logging is present across the backend and the Functions layer with sensible levels and no obvious gaps in coverage. It is the reason several findings in this report could be confirmed from evidence rather than inferred, and it is a real asset to build the correlation work in F12 on top of."
+    },
+    {
+      "title": "Correct monetary precision",
+      "detail": "Monetary values use `DECIMAL(19,4)` in the schema and `Decimal` throughout the Python valuation path, with no float conversion anywhere. For a financial platform this is the single most consequential thing to get right, and it is right."
+    },
+    {
+      "title": "Errors do not leak internals",
+      "detail": "The global exception handler returns a flat message with no stack trace, SQL fragment or internal path, and the developer exception page is correctly disabled outside development."
+    },
+    {
+      "title": "Backend secrets are externalised",
+      "detail": "Backend database credentials are held in Azure Key Vault rather than in source or configuration files. The retrieval pattern needs the caching fix in F7, but the underlying decision is correct — and it makes the frontend credential exposure in F2 an outlier rather than the house pattern."
+    },
+    {
+      "title": "The correct SQL pattern already exists in the codebase",
+      "detail": "Several backend modules use bound parameters properly. The team knows the right approach; F1 is a set of regressions against an established pattern rather than a gap in knowledge, which makes it substantially cheaper to fix consistently."
+    }
+  ],
+  "inventory": [
+    {
+      "item": "Non-test lines of code",
+      "value": "≈38,400 across 214 files"
+    },
+    {
+      "item": "Frontend",
+      "value": "React 18 · TypeScript · MUI · 47 components, 12 routes"
+    },
+    {
+      "item": "Backend",
+      "value": "Python 3.11 · FastAPI · SQLAlchemy · 31 endpoints across 9 modules"
+    },
+    {
+      "item": "Azure Functions",
+      "value": "4 functions (1 timer-triggered, 3 HTTP)"
+    },
+    {
+      "item": "Database",
+      "value": "Azure SQL · 34 tables · no versioned migrations"
+    },
+    {
+      "item": "Largest single module",
+      "value": "`ifwebtable.py` — 1,412 lines"
+    },
+    {
+      "item": "Largest single function",
+      "value": "`estimate_market_value_transactions` — 412 lines"
+    },
+    {
+      "item": "Direct axios call sites",
+      "value": "23"
+    },
+    {
+      "item": "Request-derived SQL interpolations",
+      "value": "11 (of 61 interpolation sites swept)"
+    },
+    {
+      "item": "Automated tests",
+      "value": "0"
+    }
+  ],
+  "releaseGates": [
+    {
+      "gate": "Injection reachable from a request",
+      "findingRefs": [
+        "F1"
+      ],
+      "devTest": "Warning",
+      "prod": "Blocks",
+      "status": "Open"
+    },
+    {
+      "gate": "Secrets in version control",
+      "findingRefs": [
+        "F2"
+      ],
+      "devTest": "Warning",
+      "prod": "Blocks",
+      "status": "Open"
+    },
+    {
+      "gate": "Session token exposure",
+      "findingRefs": [
+        "F3"
+      ],
+      "devTest": "Warning",
+      "prod": "Blocks",
+      "status": "Open"
+    },
+    {
+      "gate": "Transport security",
+      "findingRefs": [
+        "F4"
+      ],
+      "devTest": "Warning",
+      "prod": "Blocks",
+      "status": "Open"
+    },
+    {
+      "gate": "Irreversible data operation",
+      "findingRefs": [
+        "F10"
+      ],
+      "devTest": "Clear",
+      "prod": "Warning",
+      "status": "Open"
+    },
+    {
+      "gate": "Error responses leak internals",
+      "note": "none found",
+      "devTest": "Clear",
+      "prod": "Clear",
+      "status": "Pass"
+    },
+    {
+      "gate": "Monetary precision",
+      "note": "verified correct",
+      "devTest": "Clear",
+      "prod": "Clear",
+      "status": "Pass"
+    },
+    {
+      "gate": "Dependency vulnerability scan",
+      "findingRefs": [
+        "F18"
+      ],
+      "devTest": "Warning",
+      "prod": "Warning",
+      "status": "Needs-runtime-check"
+    },
+    {
+      "gate": "Branch protection on main",
+      "findingRefs": [
+        "F18"
+      ],
+      "devTest": "Clear",
+      "prod": "Warning",
+      "status": "Open"
+    }
+  ],
+  "phases": [
+    {
+      "number": 1,
+      "name": "Stabilisation & Risk Mitigation",
+      "objective": "Eliminate the reachable security defects and the per-request resource waste that caps throughput. Everything here either closes a production blocker or unblocks later work."
+    },
+    {
+      "number": 2,
+      "name": "Architecture & Scalability",
+      "objective": "Introduce the structural seams — shared API client, transaction boundaries, tests — that make the remaining work safe and the platform able to grow."
+    },
+    {
+      "number": 3,
+      "name": "Optimisation & Governance",
+      "objective": "Code quality and hygiene: remove the dead code and unreachable handlers that make the codebase harder to reason about than it needs to be."
+    }
+  ],
+  "suggestions": [
+    {
+      "suggestion": "Separate concerns into a layered architecture",
+      "description": "Adopt handler → service → repository, each layer with a single responsibility. Introduce it for new work immediately and extract existing code opportunistically, starting with the modules touched by the F1 fix.",
+      "impact": "Improves maintainability, scalability, readability, and unit testability. Reduces coupling between layers."
+    },
+    {
+      "suggestion": "Create one application-level engine singleton at startup",
+      "description": "A new SQLAlchemy engine is currently created for every incoming request. Engine creation is expensive and prevents any pooling benefit under load.",
+      "impact": "Reduces latency, improves throughput, optimizes connection pooling, and lowers resource consumption."
+    },
+    {
+      "suggestion": "Preload secrets at boot rather than per connection",
+      "description": "Key Vault secrets are fetched repeatedly during connection creation. These calls are network-bound, expensive and rate-limited. Cache during application startup with a refresh path that tolerates failure.",
+      "impact": "Removes an external dependency from the hot path and eliminates a throttling-induced outage mode."
+    },
+    {
+      "suggestion": "Adopt a caching query layer on the frontend",
+      "description": "Several endpoints are called by multiple components on the same screen and refetched on every navigation. A query library gives request deduplication and caching for one integration effort.",
+      "impact": "Fewer redundant network requests, reduced server load, faster page renders, and consistent data state across components."
+    },
+    {
+      "suggestion": "Wrap every route in an error boundary",
+      "description": "Wrap each route and page-level component in an error boundary with a graceful fallback, and report captured errors to a monitoring service.",
+      "impact": "Component failures are contained — the rest of the app stays functional. Users see a helpful error screen instead of a blank page, and errors are captured for investigation."
+    },
+    {
+      "suggestion": "Add a dependency audit to the pipeline before anything else",
+      "description": "No dependency scan has ever been run, so the current CVE exposure is genuinely unknown. This is a single pipeline step and the cheapest risk reduction available.",
+      "impact": "Closes the unknown-vulnerability gap identified in the coverage caveats and establishes ongoing CVE visibility."
+    }
+  ],
+  "architecturalNarrative": "As backend complexity continues to grow, separating responsibilities cleanly will provide stronger architectural clarity, better scalability control and improved operational resilience. The recommendations below are sequenced so that each one makes the next cheaper rather than being independent improvements.",
+  "architecturalRecommendations": [
+    {
+      "aspect": "Layering",
+      "current": "Business logic, database access, SQL strings and HTTP response formatting all in the same function — `estimate_market_value_transactions` is 412 lines, `create_report_on_demand` is 254.",
+      "recommended": "Clear separation: repository (queries) → service (business rules) → handler (transport).",
+      "recommendation": "Extract the repository layer first — it is where the F1 parameterisation work lands anyway, so the two changes share one pass through the code."
+    },
+    {
+      "aspect": "Connection lifecycle",
+      "current": "Engine constructed per request; Key Vault queried per connection; listener registered per call.",
+      "recommended": "One engine, one secret load and one listener registration, all at application startup.",
+      "recommendation": "Address F6, F7, F8 and F9 together — they are the same structural mistake in four places and share a single fix."
+    },
+    {
+      "aspect": "Background and batch work",
+      "current": "Report generation runs inside HTTP requests; the monthly pipeline has no failure handling or retry state.",
+      "recommended": "A durable job queue with persistent workers, retry, resume and progress visibility.",
+      "recommendation": "Start with failure handling and alerting on the existing pipeline (F17); move to a queue once the Phase 1 stabilisation work is complete."
+    },
+    {
+      "aspect": "Frontend data access",
+      "current": "23 direct axios call sites, each repeating base URL, token attachment and error handling.",
+      "recommended": "One API client with interceptors, per-domain service modules, and a caching query layer above them.",
+      "recommendation": "The client is a prerequisite for propagating the correlation IDs from F12 into frontend requests — sequence it before that work."
+    }
+  ],
+  "lookingAhead": "Industrifinans has real strengths that this report should not obscure: monetary precision is correct throughout, backend secrets are properly externalised, errors do not leak internals, and the logging discipline is better than most codebases of this age. The correct SQL pattern already exists in several modules, which means the security work ahead is closing regressions against a standard the team already knows rather than establishing a new one. Clearing the four production blockers converts the verdict from BLOCK RELEASE to APPROVE WITH CONDITIONS; the Phase 2 structural work then lifts the platform toward the 4.0 maturity target. We appreciate your trust and the opportunity to contribute to this assessment, and we look forward to supporting the delivery of this roadmap."
+}

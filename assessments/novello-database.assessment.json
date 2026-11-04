@@ -1,0 +1,492 @@
+{
+  "meta": {
+    "app": "novello-database",
+    "productName": "Novello Data Layer",
+    "client": "Novello Healthcare",
+    "org": "Novello",
+    "repository": "gitlab.com/appollo79/server (schema, migrations, data access)",
+    "repoPath": "D:/repos/novello/server",
+    "branch": "Alpha/0.0.0.2",
+    "commit": "6318f445",
+    "version": "3.9.0",
+    "stack": "MongoDB via Mongoose schemas · `migrate` CLI with a TypeScript compiler · Redis (cache + Bull) · Elasticsearch",
+    "reviewDate": "2026-10-30",
+    "assessmentType": "Technical Landscape Assessment & Recommendations Report — Refresh",
+    "documentStatus": "CONFIDENTIAL",
+    "scope": "Refresh of the 2026-07-29 data-layer assessment, covering the schema, data-access patterns, transactional integrity, migrations and data-protection posture of the Novello platform as defined in the `server` repository at branch `Alpha/0.0.0.2`. This is the data-layer view of the same repository the `novello-server` report covers from the application side; the two are deliberately separate and should be read together. All four baseline findings and all seven capability gaps were re-verified against current code. New data surface reviewed: the `invoices`, `candidates-payment-history`, `umbrellas`, `shifts`, `shift-whatsapp-offers`, `crm-permissions` and `whatsapp-inbox` collections added this cycle. No live database was available, so no index statistics, query plans, collection sizes or backup configuration could be inspected — every finding is drawn from the schema definitions and data-access code in the repository."
+  },
+
+  "verdict": {
+    "prod": "BLOCK_RELEASE",
+    "devTest": "APPROVE_WITH_CONDITIONS",
+    "summary": "Production remains blocked on one finding: every monetary value in the platform is stored as a double-precision float, and this cycle extended that pattern into three new financial modules — invoices, candidate payment history and umbrella arrangements. Pay, charge rates, WTR, totals and now invoice totals are all binary floating point, so rounding error accumulates through the timesheet-to-invoice chain and no amount can be proven exact. The surrounding picture has improved: index coverage is broad and deliberate, `unique` constraints now appear on new collections, and transaction adoption has grown from one call site to four. But none of those four is a financial write, and the three financial modules added this cycle perform seventeen write operations between them without a transaction anywhere.",
+    "blockers": [
+      { "text": "Move monetary storage off double-precision float to a decimal representation, with a migration for existing records and a recomputation of any derived totals.", "findingId": "D1" }
+    ]
+  },
+
+  "objective": {
+    "narrative": "To re-establish the state of the Novello data layer three months after the initial assessment, verifying which of the original data-integrity findings have been closed and reviewing the new collections added since. The engagement re-tested all four baseline findings and all seven capability gaps against current schema and data-access code, and paid particular attention to the three financial modules introduced this cycle, since money handling was the subject of the original blocking finding. No live database was available, so the review describes the schema as defined in code rather than as deployed.",
+    "metrics": [
+      { "value": "5", "label": "Findings", "detail": "P0=1  P1=3  P2=1" },
+      { "value": "0 of 4", "label": "Baseline Findings Fixed", "detail": "two partially improved, none closed" },
+      { "value": "7", "label": "Missing Capabilities", "detail": "backup, retention, protection, monitoring" },
+      { "value": "48", "label": "Est. Total Effort", "detail": "Man-days across all three phases" }
+    ]
+  },
+
+  "executiveSummary": "The data layer has grown substantially — seven new collections covering invoices, candidate payment history, umbrella arrangements, shifts, WhatsApp shift offers, CRM permissions and the WhatsApp inbox — and the craftsmanship visible in that new work is good. Index declarations now number 232 across the entity definitions and are spread properly, including compound and unique indexes on the newest collections; `shift-whatsapp-acceptance` declares `index({ shift: 1, candidate: 1 }, { unique: true })`, which is exactly the right instinct. Transaction usage has grown from a single call site to four. Thirteen `unique: true` constraints now exist where the July review found almost none.\n\nNone of that touches the finding that blocks release. Every monetary field in the platform is still a JavaScript `number`, which MongoDB stores as a 64-bit binary float, and `Decimal128` appears nowhere in the repository. The July report found this in rate cards and timesheets; this cycle added `invoices`, where `total: number` is the invoice amount itself. Money therefore flows from a float rate card, through float timesheet calculations, into a float invoice total, with each step able to introduce a representation error that cannot be rounded away afterwards because the error is already in the stored value. For a staffing business whose output is an invoice to a client and a payment to a worker, this is the one defect where being approximately right is not a quality issue but a correctness one.\n\nThe second theme is that the integrity mechanisms the platform has are not applied where the money is. A `withTransaction` helper exists on the database service and is now used in four places — availability, shifts, a timesheet specialism change, and users. The financial modules use it zero times: `invoices`, `candidates-payment-history`, `umbrellas` and `rate-cards` perform seventeen write operations between them with no transaction on any of them. So a multi-document financial write that fails halfway leaves the database in a state no code will reconcile. Similarly `users.email` is still declared `@Prop()` with neither `required` nor `unique`, so duplicate and absent email addresses remain possible on the collection that identifies people — while the new collections correctly constrain their own keys.\n\nThe third theme is auditability, and here the team has documented the gap itself. `docs/crm_auth.md` states plainly that archive and restore events record \"no actor and no timestamp beyond Mongoose's `updatedAt`\". The platform does have change-log collections — `timesheet-specialism-change-log`, `notification-preferences-history` — so the pattern exists; it is simply not applied to the records that most need it. Read alongside the companion server report, where candidate declarations can be modified by an anonymous caller, the consequence is that a compliance record can be altered and there is no trail to detect or reconstruct it. All seven capability gaps from July remain open, including the P0: no backup tooling, schedule or tested restore appears anywhere in the repository.",
+
+  "scorecard": {
+    "targetLabel": "target 3.7 avg",
+    "narrative": "Data moves from 1.5 to 2.0 — the P0 and both P1s survive, but index coverage is genuinely broad and deliberate, `unique` constraints and transaction usage are both spreading, and that is worth half a point. It does not move further because the improvements are all in new collections while the three findings sit on the oldest and most consequential data in the system: money, identity and the audit trail. Architecture and scalability are unchanged — the schema organisation held up well under seven new collections and the indexing supports the access patterns. Security stays at 2.0: personal data is still stored in plaintext with a single database credential for every purpose. Observability stays at 1.0, since no query performance monitoring exists and the read-preference defect in the companion report shows what that costs.",
+    "dimensions": [
+      { "id": "data", "label": "Data Integrity & DB Health", "current": 2.0, "target": 4.0, "maturity": "Developing", "keyGap": "Money is still double-precision float across rate cards, timesheets, shifts and now invoices (D1); the four financial modules perform seventeen writes with no transaction (D3); `users.email` is neither unique nor required (D2); and archive, restore and declaration changes leave no audit trail (D5)." },
+      { "id": "architecture", "label": "Schema & Model Architecture", "current": 3.5, "target": 4.0, "maturity": "Defined", "keyGap": "Entity definitions remain well organised and the seven new collections follow the established conventions, but hard deletes with no cascade or soft-delete strategy mean referential tidiness is left to application code that does not always do it (D4)." },
+      { "id": "scalability", "label": "Query & Index Health", "current": 3.5, "target": 4.0, "maturity": "Defined", "keyGap": "232 index declarations with good coverage of the new collections, including compound unique indexes — the strongest aspect of the data layer. Capped below 4.0 only because nothing measures whether the indexes match real query patterns (G4) and no live statistics were available to confirm." },
+      { "id": "security", "label": "Data Protection", "current": 2.0, "target": 4.0, "maturity": "Developing", "keyGap": "Candidate personal and compliance data is stored in plaintext with no field-level protection (G6), a single `DATABASE_URL` credential serves every purpose from migrations to request handling (G7), and there is no database-level schema validation to backstop the application's own (G3)." },
+      { "id": "observability", "label": "Data Observability", "current": 1.0, "target": 3.0, "maturity": "Initial", "keyGap": "No query performance monitoring, slow-query log or profiler configuration (G4), and no audit trail on the records that need one (D5) — so neither performance regressions nor unauthorised data changes are detectable." }
+    ]
+  },
+
+  "systemModel": {
+    "purpose": "The persistence layer for a healthcare staffing platform: candidates with their compliance evidence and declarations, client organisations and their sites, shifts and offers, timesheets with AI-assisted analysis, rate cards, invoices, candidate payment history and umbrella-company arrangements. The data is both regulated and financial — compliance records evidence that a worker was legally cleared for a shift, and the timesheet-to-invoice chain determines what a client is charged and what a worker is paid.",
+    "actors": "The API server is the only writer, through Mongoose models, using a single `DATABASE_URL` credential for request handling, background queue workers and migrations alike. Worker threads were intended to read from a secondary replica; the companion server report establishes that they do not. The `migrate` CLI applies schema and data migrations from `src/migrations` using the same credential. Elasticsearch holds a search projection and Redis holds cache and Bull queue state, both derived from this database. The realistic risk to data integrity is not an external attacker but a partial failure mid-write, since the financial paths have no transactional boundary.",
+    "dataFlows": "A shift is created from a rate card, worked, and recorded on a timesheet; the timesheet is analysed (optionally by the AI pipeline), approved, and becomes a line on an invoice to the client and an entry in candidate payment history, with umbrella arrangements determining how the worker is paid. Each hop multiplies or sums monetary values held as binary floats. Declarations and compliance records attach to the candidate and are read by the CRM and client portal. Deletes are physical: `deleteOne`, `deleteMany` and `findByIdAndDelete` appear across twelve services with no cascade handling in the schema layer.",
+    "invariants": [
+      { "statement": "A monetary amount is stored exactly as computed, with no representation error.", "status": "VIOLATED", "findingId": "D1", "note": "Every money field is a JavaScript `number` and therefore a 64-bit binary float. `Decimal128` appears nowhere in the repository." },
+      { "statement": "A multi-document financial write either completes fully or leaves no trace.", "status": "VIOLATED", "findingId": "D3", "note": "`invoices`, `candidates-payment-history`, `umbrellas` and `rate-cards` perform seventeen writes between them and call `withTransaction` zero times." },
+      { "statement": "Every person is identified by exactly one unique, present identifier.", "status": "VIOLATED", "findingId": "D2", "note": "`users.email` is `@Prop()` — neither `required` nor `unique` — so duplicates and absences are both permitted." },
+      { "statement": "Every change to a compliance or account-state record records who made it and when.", "status": "VIOLATED", "findingId": "D5", "note": "Documented by the team in `docs/crm_auth.md`: archive and restore record no actor and no timestamp beyond `updatedAt`. Declaration changes likewise have no log." },
+      { "statement": "Deleting a record leaves no orphaned references.", "status": "VIOLATED", "findingId": "D4", "note": "Hard deletes across twelve services with no cascade declared in the schema and no soft-delete field on the base entity." },
+      { "statement": "Every collection is indexed for the queries actually run against it.", "status": "HOLDS", "note": "232 index declarations across the entity definitions, covering the new collections as well as the old, including compound and unique indexes where the access pattern needs them. Verified from the schema; not confirmed against live query plans." },
+      { "statement": "Uniqueness is enforced by the database rather than by application convention.", "status": "CHECK", "findingId": "D2", "note": "Improving: thirteen `unique: true` constraints now exist, concentrated in the collections added this cycle. The oldest and most important — user email — is still unconstrained." },
+      { "statement": "The schema shape is enforced at the database as well as in the application.", "status": "VIOLATED", "note": "No `$jsonSchema` validator on any collection; the only validators found are `class-validator` decorators, which constrain the API boundary and not direct database writes or migrations (G3)." },
+      { "statement": "Personal and compliance data is protected at rest beyond disk encryption.", "status": "VIOLATED", "note": "No field-level encryption or CSFLE configuration. The one `encrypt-decrypt` helper found belongs to client-portal link generation, not to data at rest (G6)." },
+      { "statement": "The database can be restored to a known point after loss.", "status": "VIOLATED", "note": "No backup tooling, schedule, documentation or restore procedure anywhere in the repository, and no RPO or RTO defined (G1, G2). This is unchanged since July." },
+      { "statement": "Each consumer connects with a credential scoped to what it needs.", "status": "VIOLATED", "note": "A single `DATABASE_URL`, now correctly `required()` in the schema, serves request handling, queue workers and migrations alike (G7)." },
+      { "statement": "Data that is no longer needed is removed or archived on a defined schedule.", "status": "VIOLATED", "note": "No retention or archival policy, and the new `whatsapp-inbox` and timesheet-analysis collections are high-volume append-mostly stores that will grow without bound (G5)." }
+    ]
+  },
+
+  "threatModel": "The realistic threat to this data layer is not an intruder but arithmetic and partial failure. D1 is the clearest: nobody attacks it, and it degrades every invoice and payment the platform produces, silently, in a direction nobody can reconstruct after the fact. D3 is the second: a queue worker or request that fails between writing an invoice line and writing the corresponding payment-history entry leaves an inconsistency that no reconciliation job exists to find. Where an adversary does matter, two findings combine badly with the companion server report: candidate declarations can be modified by an anonymous caller (server F2), and D5 means that modification leaves no actor, no timestamp and no before-image — so a compliance record can be altered and the alteration is neither detectable nor reversible. Finally, the absence of any verified backup (G1) means that every one of these failure modes is one-way: there is no established point to restore to.",
+
+  "coverage": {
+    "method": "Refresh review, baseline-differential. All four findings and all seven capability gaps from the 2026-07-29 assessment were re-tested against the current tree, then the collections added this cycle were reviewed for the same classes of defect. Static review of Mongoose entity definitions, the database service and module, the migration set and the data-access code in the financial modules. No live database was available.",
+    "size": "17 migrations in `src/migrations` (15 at the baseline commit), 232 index declarations across entity definitions, 13 `unique: true` constraints, and seven collections added since July. The repository itself changed by 151 commits and +23,489/−1,540 lines, measured against the last commit on or before 2026-07-29.",
+    "deepRead": [
+      "src/modules/rate-cards/entities/rate-card-value.entity.ts — in full",
+      "src/modules/invoices/infrastructure/entities/invoice.entity.ts — monetary fields",
+      "src/modules/users/entities/user.entity.ts — identity fields and constraints",
+      "src/modules/database/database.service.ts — the `withTransaction` helper",
+      "src/modules/database/database.module.ts — connection construction and read preference",
+      "src/modules/common/entities/base.entity.ts — shared fields and the absence of soft-delete",
+      "docs/crm_auth.md — the team's own note on the missing archive/restore audit trail",
+      "package.json — the `migrate:create` / `migrate:up` / `migrate:down` scripts and store configuration",
+      "src/modules/common/configs/env.ts — DATABASE_URL declaration and validation"
+    ],
+    "grepSwept": [
+      "`Decimal128` across the whole tree — zero occurrences",
+      "monetary field names (`baseRate`, `wtr`, `totalPay`, `total`, `amount`, `rate`, `price`, `cost`, `netPay`, `grossPay`, `charge`, `fee`, `vat`, `subtotal`) typed `number` across all entity files",
+      "`withTransaction` / `startSession` call sites across `src/modules`, then per-module counts for invoices, candidates-payment-history, umbrellas, rate-cards and timesheet against their write counts",
+      "`unique: true` and `.index(` / `index: true` across all entity files, with per-module distribution",
+      "`deleteOne` / `deleteMany` / `findByIdAndDelete` across services",
+      "`deletedAt` / `isDeleted` / `softDelete` across the base entity and modules",
+      "`jsonSchema` / `validator:` for database-level schema validation",
+      "`encrypt` / `csfle` / `clientEncryption` for field-level protection",
+      "`mongodump` / `backup` / `restore` / `snapshot` across package.json, CI and docs",
+      "audit and history entity names across modules"
+    ],
+    "notRead": [
+      "The live MongoDB deployment — no collection sizes, document counts, index statistics, query plans, profiler output or replica-set configuration were available",
+      "The hosting provider's backup configuration — whether Atlas continuous backup or equivalent is enabled could not be established from the repository, which is precisely the gap G1 describes",
+      "The contents of the 17 migrations were enumerated but not individually reviewed for reversibility",
+      "Elasticsearch index mappings and the synchronisation path that maintains them",
+      "Redis key design and Bull queue retention settings",
+      "The business correctness of the invoice, umbrella and payment calculations — this report covers how the values are stored and written, not whether the arithmetic is right",
+      "`server-hotfix/` — the unversioned parallel copy noted in the companion server report may carry schema changes not present here"
+    ],
+    "caveats": [
+      "D1's practical impact depends on the magnitudes and operation counts involved, which cannot be established without the live data. Binary floats represent most two-decimal values inexactly, and the error compounds through multiplication and summation along the rate-card → timesheet → invoice chain; whether that has already produced a visible discrepancy on a real invoice is a question for the data, not the code. The storage defect is certain either way.",
+      "The index assessment is drawn from schema declarations, not from live statistics. 232 declarations with good distribution is strong evidence of deliberate practice, but whether those indexes match the queries actually run — and whether any are unused overhead — needs the profiler output that G4 would provide.",
+      "G1 is reported as missing on the basis that no backup tooling, schedule or restore procedure appears anywhere in the repository. If the database is hosted on Atlas with continuous backup enabled, a mechanism exists but remains undocumented and untested from the application team's side, which is materially the same finding. Confirm with whoever owns the hosting account.",
+      "D3's count of seventeen writes across the four financial modules comes from matching `save(`, `updateOne`, `insertMany` and `create(` per module. Some of those may be single-document writes that need no transaction; the finding rests on none of the four modules using a transaction anywhere, not on all seventeen requiring one.",
+      "Whether the two migrations added since July are the complete record of schema change is unknown. MongoDB creates collections implicitly, so the seven new collections needed no migration — which means the migration set is not a reliable history of the schema's evolution.",
+      "This report and `novello-server` describe the same repository from different angles and deliberately overlap in two places: the read-preference defect and the declaration-write exposure are stated in the server report and referenced here for their data consequences. Read together, not in isolation."
+    ]
+  },
+
+  "findings": [
+    {
+      "id": "D1",
+      "title": "All monetary values are stored as double-precision floating point, and three new financial modules extend the pattern",
+      "ruleId": "DAT-008",
+      "group": "Data Integrity",
+      "layer": "Database",
+      "dimension": "data",
+      "riskDimension": "Reliability",
+      "criticality": "High",
+      "priority": "P0",
+      "phase": 1,
+      "gate": "blocks-prod",
+      "confidence": "Confirmed",
+      "instances": 4,
+      "claim": "Every monetary field in the platform is declared as a TypeScript `number`, which Mongoose stores as a MongoDB `double` — a 64-bit binary float. `Decimal128` appears nowhere in the repository, and this cycle added `invoices.total` to the pattern.",
+      "evidence": [
+        { "file": "src/modules/rate-cards/entities/rate-card-value.entity.ts", "line": 11, "snippet": "@Prop()\nbaseRate: number;\n\n@Prop()\nwtr: number;\n\n@Prop()\ntotalPay: number;", "note": "The origin of every monetary figure in the system — the rate card — holds base rate, working-time regulation uplift and total pay as floats, with no `type` override." },
+        { "file": "src/modules/invoices/infrastructure/entities/invoice.entity.ts", "line": 58, "snippet": "total: number;", "note": "Added this cycle. This is the invoice amount itself — the number sent to a client — stored as a binary float." },
+        { "file": "src/modules/timesheet/infrastructure/entities/timesheet.entity.ts", "line": 59, "note": "The middle of the chain: timesheet values are multiplied out from the rate card and summed into the invoice, so each hop can compound a representation error." },
+        { "file": "src/modules", "note": "A tree-wide search for `Decimal128` returns no occurrences, so no collection anywhere uses an exact decimal type. The pattern spans rate-cards, timesheet, shifts and invoices." }
+      ],
+      "reasoning": "Binary floating point cannot represent most two-decimal values exactly — 0.1 and 0.07 among them — so an amount is stored as the nearest representable double and the difference is already baked in before any arithmetic happens. Because the platform multiplies a rate by hours, applies an uplift, sums lines into an invoice total and separately derives a worker payment, the errors compound along a chain rather than appearing once. Rounding at display time does not help: the stored value is already not the computed value, and two systems summing the same lines in different orders can disagree. For a business whose output is a client invoice and a worker payment, that is a correctness defect rather than a precision preference.",
+      "reproduction": "In a `mongosh` session against any environment, insert `{ r: 0.07 }` and multiply it by 3 — the result is 0.21000000000000002, not 0.21. The same arithmetic runs in the rate-card-to-invoice path. Summing a realistic set of timesheet lines in two different orders will produce totals that differ in the final decimal place.",
+      "impact": "Makes every stored amount exact and every total reproducible, so an invoice to a client and a payment to a worker can be proven correct rather than approximately right.",
+      "refutation": "Checked whether amounts are stored in minor units — pence as integers — which would make float storage harmless: they are not; the fields are plain decimals (`baseRate`, `wtr`, `totalPay`) with no minor-unit convention in the entity or the DTOs. Checked whether a serialisation layer rounds consistently on the way out, which would bound the error: presenters format for display but do not re-derive the value, so the stored figure remains authoritative. Checked whether `Decimal128` is used on the newest financial collections, where the team might have changed approach: it is not used anywhere. Survives, and with wider reach than in July.",
+      "remediation": "Choose one representation and apply it consistently: either MongoDB `Decimal128` with a decimal library at the application boundary, or integer minor units with a single conversion point. Decimal128 is the smaller change here because the field names and arithmetic stay recognisable. Then migrate existing documents, and — importantly — recompute derived totals rather than converting them, since a stored total may already differ from the sum of its lines. Add a test asserting that a realistic rate-card-to-invoice calculation reproduces an exact expected total.",
+      "sampleFix": "@Prop({ type: mongoose.Schema.Types.Decimal128 })\nbaseRate: Types.Decimal128;\n\n// and at the boundary, convert through a decimal library rather than Number()\n// so that no arithmetic is ever performed on a float.",
+      "effortDays": 8,
+      "role": "Database Engineer"
+    },
+    {
+      "id": "D2",
+      "title": "User email is neither unique nor required, while the collections added this cycle constrain their own keys correctly",
+      "ruleId": "DAT-003",
+      "group": "Data Integrity",
+      "layer": "Database",
+      "dimension": "data",
+      "riskDimension": "Reliability",
+      "criticality": "Medium",
+      "priority": "P1",
+      "phase": 2,
+      "gate": "warning",
+      "confidence": "Confirmed",
+      "claim": "`users.email` is declared `@Prop()` with no `required` and no `unique`, so the collection that identifies people permits both duplicate and absent email addresses — unchanged since July, even though thirteen `unique: true` constraints now exist elsewhere.",
+      "evidence": [
+        { "file": "src/modules/users/entities/user.entity.ts", "line": 30, "snippet": "@ApiPropertyOptional()\n@Prop()\nemail?: string;", "note": "Optional in the API contract and unconstrained in the database. Nothing stops two users sharing an address, or a user having none." },
+        { "file": "src/modules/crm-permissions/infrastructure/entities/crm-user-permissions.entity.ts", "line": 13, "snippet": "@Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'UserEntity', required: true, unique: true })", "note": "Sibling comparison, added this cycle: the new collections declare `required: true, unique: true` where the key demands it." },
+        { "file": "src/modules/shift-whatsapp-offers/entities/shift-whatsapp-acceptance.entity.ts", "line": 33, "snippet": "ShiftWhatsappAcceptanceSchema.index({ shift: 1, candidate: 1 }, { unique: true });", "note": "A compound unique index preventing duplicate acceptances — exactly the right instinct, applied to new data but not retrofitted to identity." },
+        { "file": "src/modules/application/entities/application.entity.ts", "line": 20, "snippet": "unique: true,", "note": "One of the thirteen. The practice is established; `users.email` is the omission." }
+      ],
+      "reasoning": "Email is the de facto login identifier and the key the platform matches people on across the CRM, the portal and the candidate apps. Leaving it unconstrained means the database will accept a state the application logic assumes is impossible, and the failure is silent — two accounts with the same address diverge quietly until someone notices that a candidate exists twice. It is reported at P1 rather than P0 because exploiting it requires the application to permit the duplicate in the first place, and because the fix needs a data cleanup before the constraint can be applied.",
+      "impact": "Guarantees one account per email address at the database level, so identity cannot silently fork and the application's assumptions about uniqueness are actually enforced.",
+      "refutation": "Checked whether uniqueness is enforced in application code instead, which would make this a defence-in-depth point rather than a defect — the registration and invite paths check for an existing user, but nothing prevents a concurrent insert or a direct write from a migration or script, which is the case a database constraint exists to cover. Checked whether `email` is genuinely optional by design, since candidates may be phone-only: it is, which is why the remediation proposes a partial index rather than simply adding `required: true`.",
+      "remediation": "Add a partial unique index — unique where the field exists and is non-null — so phone-only accounts remain valid while duplicates become impossible. Dedupe the existing collection first and decide deliberately how to merge or retire the duplicates found, since the index creation will fail while any remain. That data decision, not the index, is the bulk of the effort.",
+      "sampleFix": "UserSchema.index(\n  { email: 1 },\n  { unique: true, partialFilterExpression: { email: { $type: 'string' } } },\n);",
+      "effortDays": 2,
+      "role": "Database Engineer"
+    },
+    {
+      "id": "D3",
+      "title": "The transaction helper is now used in four places, none of them financial",
+      "ruleId": "DAT-002",
+      "group": "Data Integrity",
+      "layer": "Database",
+      "dimension": "data",
+      "riskDimension": "Reliability",
+      "criticality": "High",
+      "priority": "P1",
+      "phase": 2,
+      "gate": "warning",
+      "confidence": "Confirmed",
+      "instances": 4,
+      "claim": "`DatabaseService.withTransaction` exists and adoption has grown from one call site to four, but `invoices`, `candidates-payment-history`, `umbrellas` and `rate-cards` perform seventeen write operations between them and call it zero times — including the three modules added this cycle.",
+      "evidence": [
+        { "file": "src/modules/database/database.service.ts", "line": 62, "snippet": "async withTransaction<T>(callback: (session) => Promise<T>): Promise<T> {\n  ...\n  session = await this.getConnection().startSession();\n  ...\n  await session.withTransaction(async () => {", "note": "The helper is correctly written — it manages the session lifecycle and wraps the callback properly. The problem is purely where it is and is not called." },
+        { "file": "src/modules/shifts/shifts.service.ts", "line": 568, "snippet": "await this.dbService.withTransaction(async () => {", "note": "One of the four adopters, alongside `availability.service.ts:115`, `users.service.ts:354` and a timesheet specialism change — real progress from the single call site in July." },
+        { "file": "src/modules/invoices", "note": "Per-module counts of `withTransaction` against write operations (`save(`, `updateOne`, `insertMany`, `create(`): invoices 0 of 5, candidates-payment-history 0 of 4, umbrellas 0 of 4, rate-cards 0 of 4. Timesheet manages 1 of 8." },
+        { "file": "src/modules/candidates-payment-history/infrastructure/entities/candidate-payment-history.entity.ts", "note": "Payment history is a derived record written alongside invoice and timesheet state — exactly the multi-document write that needs a transaction to stay consistent." }
+      ],
+      "reasoning": "Violates the invariant that a multi-document financial write either completes fully or leaves no trace. The timesheet-to-invoice-to-payment chain touches several collections per approval; without a session, a failure between those writes leaves an invoice with no corresponding payment-history entry, or vice versa, and no reconciliation job exists to detect it. The sharp edge of this finding is that the helper is available and three brand-new financial modules were written without reaching for it — so the gap is habit rather than capability, which is also why it is cheap to close.",
+      "impact": "Makes every financial write atomic, so a partial failure cannot leave invoices, payment history and timesheet state disagreeing with each other.",
+      "refutation": "Checked whether the financial writes are genuinely single-document and therefore atomic already — invoice creation writes invoice documents and updates the contributing timesheets, and payment history is written alongside, so at least the approval paths are multi-document. Checked whether MongoDB's single-document atomicity covers the embedded-array cases, which it does — so the finding is scoped to the cross-collection writes rather than claiming all seventeen need a session. Checked whether a replica set is in use, since transactions require one: the connection handling and the intended secondary read preference both imply a replica set, so transactions are available. Survives.",
+      "remediation": "Wrap the invoice-approval, payment-history and umbrella-assignment paths in `withTransaction`, taking `shifts.service.ts:568` as the in-house pattern. Then add a reconciliation check — invoices without matching payment history and vice versa — and run it once over existing data, since any inconsistency already created will not fix itself.",
+      "effortDays": 5,
+      "role": "Backend Engineer",
+      "rationale": "High criticality because the data at risk is financial and the inconsistency is silent, but P1 rather than P0 because it requires a partial failure to manifest rather than being continuously true the way D1 is."
+    },
+    {
+      "id": "D5",
+      "title": "Account-state and compliance changes leave no audit trail, as the team's own documentation records",
+      "ruleId": "SEC-022",
+      "group": "Data Integrity",
+      "layer": "Database",
+      "dimension": "data",
+      "riskDimension": "Security",
+      "criticality": "Medium",
+      "priority": "P1",
+      "phase": 2,
+      "gate": "warning",
+      "confidence": "Confirmed",
+      "claim": "Archiving or restoring a user records no actor and no timestamp beyond Mongoose's `updatedAt`, and declaration changes have no log at all — while the platform does maintain change-log collections for timesheet specialism changes and notification preferences.",
+      "evidence": [
+        { "file": "docs/crm_auth.md", "line": 69, "snippet": "There is no audit trail of archive/restore events — no actor and no timestamp are recorded beyond\nMongoose's `updatedAt`. If that is needed, it is a separate ticket.", "note": "The team's own note. The gap is known and deliberately deferred, which makes this a prioritisation question rather than a discovery." },
+        { "file": "src/modules/timesheet/infrastructure/entities/timesheet-specialism-change-log.entity.ts", "note": "Sibling comparison: a dedicated change-log collection exists for timesheet specialism changes, so the pattern is established in the codebase." },
+        { "file": "src/modules/users/entities/notification-preferences-history.entity.ts", "note": "And a history collection for notification preferences — a far lower-stakes record than a compliance declaration." },
+        { "file": "src/modules/candidates-declarations/infrastructure/routes/candidates-declaration.controller.ts", "line": 65, "note": "The declaration `PATCH` route, which the companion server report establishes is reachable by an anonymous caller. No log of any kind records who changed what." }
+      ],
+      "reasoning": "Auditability is where this report and the companion server report meet. On its own, a missing archive/restore trail is a governance inconvenience. Combined with server finding F2 — declarations modifiable without authentication — it means a regulatory record can be altered by an unidentified party and there is no actor, no timestamp and no before-image to detect it or reconstruct the original. For a staffing agency whose compliance evidence is what demonstrates a worker was cleared to work, that is the difference between an incident you can investigate and one you cannot.",
+      "impact": "Makes changes to compliance and account-state records attributable and reconstructible, so an unauthorised or mistaken change can be detected, investigated and reversed.",
+      "refutation": "Checked whether a generic audit mechanism exists that these paths simply opt out of — the history collections found are purpose-built per feature, so there is no shared facility being bypassed. Checked whether Mongoose timestamps are sufficient: `updatedAt` records when but not who or what changed, and is overwritten by the next change, so it cannot support an investigation. Checked whether the application logs would serve instead — the companion report establishes that 50 of 81 catch blocks discard their exception and there is no APM, so logs are not a reliable substitute. Survives.",
+      "remediation": "Introduce one shared audit mechanism rather than a third bespoke history collection — a Mongoose plugin or a small `auditLog` collection capturing actor, action, collection, document id, timestamp and a before/after diff — and apply it first to user archive/restore, declarations and compliance records. Fix server F2 at the same time, since an audit trail that records 'anonymous' for a compliance change is of limited comfort.",
+      "effortDays": 3,
+      "role": "Backend Engineer",
+      "rationale": "P1 rather than P2 because of the interaction with the unauthenticated declaration writes in the companion report: the two together make an unauthorised compliance change both possible and undetectable. On its own the archive/restore gap would be P2."
+    },
+    {
+      "id": "D4",
+      "title": "Hard deletes with no cascade or soft-delete strategy",
+      "ruleId": "DAT-011",
+      "group": "Schema Design",
+      "layer": "Database",
+      "dimension": "architecture",
+      "riskDimension": "Reliability",
+      "criticality": "Medium",
+      "priority": "P2",
+      "phase": 3,
+      "gate": "clear",
+      "confidence": "Confirmed",
+      "instances": 12,
+      "claim": "Twelve services call `deleteOne`, `deleteMany` or `findByIdAndDelete` directly, the shared base entity carries no `deletedAt` or `isDeleted` field, and no cascade behaviour is declared in any schema — so referential cleanup depends entirely on whichever service happens to do it.",
+      "evidence": [
+        { "file": "src/modules/common/entities/base.entity.ts", "note": "No `deletedAt`, `isDeleted` or soft-delete field, so there is no platform-wide convention for retiring a record rather than removing it." },
+        { "file": "src/modules", "note": "Twelve service files call `deleteOne`, `deleteMany` or `findByIdAndDelete`. MongoDB declares no foreign keys, so nothing in the schema layer removes or nulls the references left behind." },
+        { "file": "docs/crm_auth.md", "line": 46, "note": "Users are handled differently again — an archive/restore flow rather than a delete — which is the right idea but is implemented for that one entity rather than as a shared pattern (D5 covers its missing audit trail)." }
+      ],
+      "reasoning": "Deleting a candidate, client site or rate card leaves references to it on shifts, timesheets, invoices and payment history, and nothing reconciles them. The practical result is dangling ObjectIds that populate as null, which application code must defend against everywhere and generally does not. The user archive flow shows the team already prefers retiring records in at least one place; the finding is the absence of that as a convention. P2 because it degrades gradually rather than failing outright, and because the fix is a design decision that should follow the higher-priority data work.",
+      "impact": "Prevents orphaned references accumulating across the financial and scheduling collections, and gives the platform one consistent way to retire a record that history still refers to.",
+      "refutation": "Checked whether Mongoose middleware implements cascade behaviour on delete — no `pre('deleteOne')` or equivalent hooks performing reference cleanup were found. Checked whether the deletes are confined to collections nothing references, which would make this benign — they are not; they include entities referenced from the scheduling and financial chain. Held at P2 rather than raised: no evidence was gathered of orphaned documents in live data, since no database was available.",
+      "remediation": "Decide the convention first: soft-delete via a `deletedAt` on the base entity with query middleware excluding retired documents, or explicit archive flows like the user one. Then apply it to the referenced entities — candidates, clients, sites, rate cards — and leave genuinely disposable collections as hard deletes. Add a one-off integrity sweep for existing orphans before changing behaviour, so the backlog is known.",
+      "effortDays": 4,
+      "role": "Database Engineer"
+    }
+  ],
+
+  "gaps": [
+    {
+      "capability": "Verified backup and restore",
+      "area": "Resilience",
+      "status": "missing",
+      "why": "Re-verified: no backup tooling, schedule, script or restore procedure appears anywhere in the repository, CI configuration or documentation — a search for `mongodump`, `backup`, `restore` and `snapshot` returns only unrelated matches about archiving a user and saving populated objects. This database holds the only copy of candidate compliance evidence and the entire financial chain, and D1 means a bad data migration could corrupt monetary values across every invoice at once with no established point to return to.",
+      "recommendation": "Confirm first whether the hosting provider already takes backups — if Atlas continuous backup is enabled, the gap is documentation and testing rather than mechanism. Either way, establish a scheduled dump to storage outside the database account, and rehearse a restore into a scratch database before the D1 migration runs, since that migration is the first operation that genuinely needs it.",
+      "priority": "P0",
+      "phase": 1,
+      "effortDays": 3,
+      "role": "Database Engineer",
+      "layer": "Database"
+    },
+    {
+      "capability": "Defined RPO and RTO",
+      "area": "Resilience",
+      "status": "missing",
+      "why": "Re-verified: no recovery objectives are stated anywhere. Without them there is no way to judge whether whatever backup exists is adequate, and no basis for the restore rehearsal in G1 to be measured against. The platform schedules shifts in real time, so the tolerable loss window for shift and timesheet data is likely much shorter than for reference data — a distinction nobody has had to articulate.",
+      "recommendation": "Agree a recovery point and recovery time objective per data class — scheduling and timesheet data, financial records, reference data — with whoever owns the commercial risk, then measure the actual restore time in the G1 rehearsal and record whether it meets them.",
+      "priority": "P1",
+      "phase": 1,
+      "effortDays": 2,
+      "role": "Solution Architect",
+      "layer": "Database"
+    },
+    {
+      "capability": "Database-level schema validation",
+      "area": "Data Integrity",
+      "status": "missing",
+      "why": "Re-verified: no collection declares a `$jsonSchema` validator. The only validators in the tree are `class-validator` decorators, which constrain the API boundary and nothing else — so a migration, a script or a direct `mongosh` write can insert a document of any shape, and the application will later read it and fail somewhere unrelated. With 17 migrations and seven new collections added without any, the write paths that bypass validation are the ones growing fastest.",
+      "recommendation": "Add `$jsonSchema` validators for the highest-value collections first — users, candidates, timesheets, invoices — generated from the Mongoose schemas so the two cannot drift, and set them to `warn` initially so existing non-conforming documents surface before they start rejecting writes.",
+      "priority": "P1",
+      "phase": 2,
+      "effortDays": 4,
+      "role": "Database Engineer",
+      "layer": "Database"
+    },
+    {
+      "capability": "Query performance monitoring",
+      "area": "Observability",
+      "status": "missing",
+      "why": "Re-verified: no profiler configuration, slow-query logging or query-timing instrumentation, and the companion server report confirms no APM package in the dependency tree. The consequence is demonstrated by a defect in that report: the secondary read preference intended for worker threads has never taken effect because the result of a `String.concat` was discarded, so read load has been concentrated on the primary for months with nothing to reveal it. 232 index declarations exist and nothing establishes whether they match the queries actually run.",
+      "recommendation": "Enable the MongoDB profiler at a slow-query threshold in non-production and sample it in production, add Mongoose query timing to the APM work recommended in the companion report, and review the slowest aggregations against the existing indexes — starting with the reporting and invoice queries, which are the newest and least exercised.",
+      "priority": "P1",
+      "phase": 2,
+      "effortDays": 3,
+      "role": "Database Engineer",
+      "layer": "Database"
+    },
+    {
+      "capability": "Separated database credentials by purpose",
+      "area": "Data Protection",
+      "status": "missing",
+      "why": "Re-verified: a single `DATABASE_URL` — now correctly `required()` in the schema, which is an improvement — serves request handling, the Bull queue workers and the `migrate` CLI alike. So the credential the API uses on every request also has the rights to drop a collection, and the companion report establishes that this credential ships inside the production container image.",
+      "recommendation": "Issue separate users with scoped roles: read-write on the application collections for the API, the same or narrower for the workers, and a dedicated migration user holding DDL rights that is used only by the migrate step. Sequence alongside the Secrets Manager work in the companion report so each credential is injected rather than baked in.",
+      "priority": "P1",
+      "phase": 2,
+      "effortDays": 2,
+      "role": "Database Engineer",
+      "layer": "Database"
+    },
+    {
+      "capability": "Data retention and archival policy",
+      "area": "Data Protection",
+      "status": "missing",
+      "why": "Re-verified: no retention policy, TTL index or archival process anywhere. Two of the collections added this cycle make this more pressing than it was in July — `whatsapp-inbox` stores inbound message history and `timesheet-analysis` stores AI analysis output, both append-mostly and both growing with usage rather than with headcount. Candidate records including compliance evidence and declarations are retained indefinitely by default, which for personal data of this kind is a position that should be chosen rather than inherited.",
+      "recommendation": "Define retention per data class, implement TTL indexes for the operational collections where a window is genuinely acceptable, and build an archival path for candidate records that must be kept but need not stay in the working set. Record the decision and its basis, since for compliance data the retention period is a regulatory question rather than a technical one.",
+      "priority": "P1",
+      "phase": 3,
+      "effortDays": 4,
+      "role": "Database Engineer",
+      "layer": "Database"
+    },
+    {
+      "capability": "Field-level protection for personal data",
+      "area": "Data Protection",
+      "status": "missing",
+      "why": "Re-verified: no field-level encryption or client-side field level encryption configuration. The one `encrypt-decrypt` helper in the tree belongs to client-portal link generation, not to data at rest. So candidate names, contact details, dates of birth, right-to-work status, DBS outcomes and health declarations sit in plaintext, protected only by storage-level encryption and by access control — and the companion report establishes that the access control on the declaration collections is currently absent.",
+      "recommendation": "Classify the fields that warrant protection, then apply MongoDB client-side field level encryption to the narrow set where it genuinely helps — identifiers and health declarations — rather than broadly, since encrypted fields cannot be queried in the usual ways. Fix the access-control findings in the companion report first; encryption is the second layer, not a substitute for the first.",
+      "priority": "P1",
+      "phase": 3,
+      "effortDays": 8,
+      "role": "Database Engineer",
+      "layer": "Database"
+    }
+  ],
+
+  "refutedCandidates": [
+    {
+      "claim": "The new collections added this cycle repeat the indexing gaps of the older schema.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "The opposite is true, and it is the strongest thing in this report. 232 index declarations exist across the entity definitions with good distribution into the new modules — `whatsapp-inbox` has four, `shift-whatsapp-offers` two including a compound `index({ shift: 1, candidate: 1 }, { unique: true })`, `crm-permissions` declares `required: true, unique: true` on its user reference. Indexing and key constraints on new collections are a demonstrated strength, which is why the `scalability` dimension sits at 3.5 and why D2 is scoped to user email specifically rather than to uniqueness generally."
+    },
+    {
+      "claim": "The seven new collections were introduced without migrations, so schema change is untracked.",
+      "verdict": "Refuted",
+      "step": 3,
+      "reasoning": "Only two migrations were added against seven new collections, which initially looked like a gap. But MongoDB creates collections implicitly on first write, so a new collection genuinely needs no migration — the migration set exists for data transformations and index management, not for DDL. The real observation is narrower and is recorded under G3: because collections can appear without any migration or validator, nothing anywhere asserts what shape a document must have. No finding was raised for the migration count itself."
+    },
+    {
+      "claim": "Monetary amounts are safe because they are stored in minor units as integers.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "Checked specifically, because integer minor units would make float storage a non-issue. The fields are plain decimal amounts — `baseRate`, `wtr`, `totalPay`, `total` — with no minor-unit convention in the entities, the DTOs or the presenters, and no conversion helper anywhere in the tree. D1 stands."
+    },
+    {
+      "claim": "Rounding at the presentation layer bounds the floating-point error, making D1 cosmetic.",
+      "verdict": "Refuted",
+      "step": 4,
+      "reasoning": "Traced the consequence rather than the symptom. Presenters format values for display but do not re-derive them, so the stored figure remains authoritative for every downstream use — the invoice sent to the client, the payment to the worker, and any later sum over those records. Rounding on output cannot recover precision that was lost before storage, and two systems summing the same float lines in different orders can still disagree. The defect is in what is persisted, not in what is shown."
+    },
+    {
+      "claim": "The `withTransaction` helper is unusable because the deployment is a standalone MongoDB instance rather than a replica set.",
+      "verdict": "Refuted",
+      "step": 3,
+      "reasoning": "MongoDB transactions require a replica set, so this would have excused D3 entirely. The evidence points the other way: the database module contains an explicit secondary read-preference branch for worker threads, which only makes sense against a replica set, and the helper is already used successfully in four places. Transactions are available; the financial modules simply do not use them."
+    },
+    {
+      "claim": "Hard deletes are safe because MongoDB has no foreign keys to violate.",
+      "verdict": "Refuted",
+      "step": 4,
+      "reasoning": "The absence of foreign keys is why this matters rather than why it does not. Nothing in the schema layer removes or nulls the references left behind, so a deleted candidate or rate card leaves dangling ObjectIds on shifts, timesheets, invoices and payment history, which populate as null and must be defended against in application code at every read. Retained as D4 at P2 — it degrades gradually rather than failing outright, and no live data was available to quantify the existing orphan backlog."
+    },
+    {
+      "claim": "The `encrypt-decrypt` helper found in the tree provides field-level protection for personal data.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "It belongs to `client-portal/domain/helpers` and exists to encrypt the parameters of client-portal access links, using the `CLIENTP_IV` and `CLIENTP_PS` values. It is not applied to any stored candidate field and is not a CSFLE configuration. G6 stands: personal and compliance data is stored in plaintext."
+    }
+  ],
+
+  "positivePosture": [
+    {
+      "title": "Index coverage is broad, deliberate and extends to the newest collections",
+      "detail": "232 index declarations across the entity definitions, distributed sensibly rather than clustered — four each in `whatsapp-inbox`, `timesheet`, `candidates` and `application`, with compound indexes where the access pattern needs them. `shift-whatsapp-acceptance` declares `index({ shift: 1, candidate: 1 }, { unique: true })`, which both supports the lookup and prevents duplicate acceptances with one declaration. This is the clearest evidence in either Novello server report that the team thinks about data access while designing, and it is why query health scores 3.5 against a data integrity score of 2.0."
+    },
+    {
+      "title": "Key constraints are now declared on new collections",
+      "detail": "Thirteen `unique: true` constraints exist where the July review found almost none, and they are in the right places: `crm-user-permissions` constrains its user reference `required: true, unique: true`, `crm-permission-page` constrains its page key, `counter` constrains its name. The practice has changed for new work — D2 is the observation that it was not retrofitted to user email, not that the practice is absent."
+    },
+    {
+      "title": "Transaction adoption has grown from one call site to four",
+      "detail": "`withTransaction` is now used in `availability.service.ts`, `shifts.service.ts`, `users.service.ts` and the timesheet specialism change use-case, against a single call site at the baseline commit. The helper itself is correctly written — it manages the session lifecycle and wraps the callback rather than leaking the session to callers. The direction is right; D3 is that it has not reached the financial modules."
+    },
+    {
+      "title": "The platform already has a change-log pattern to generalise",
+      "detail": "`timesheet-specialism-change-log` and `notification-preferences-history` are purpose-built history collections, and users have an archive/restore flow rather than a delete. The building blocks for D5's audit trail and D4's soft-delete convention both exist in the codebase already — the remediation for each is to generalise an established pattern rather than introduce a new one."
+    },
+    {
+      "title": "The database URL is now a required configuration value",
+      "detail": "`DATABASE_URL: Joi.string().required()` — part of the environment-schema rewrite that closed the two credential P0s in the companion report. The connection string can no longer fall back to a committed default, which means a misconfigured environment fails at boot rather than connecting somewhere unintended."
+    },
+    {
+      "title": "The team documents its own known gaps candidly",
+      "detail": "`docs/crm_auth.md` states plainly that archive and restore record no actor or timestamp and that addressing it \"is a separate ticket\". A `docs/development.md` note explains the snapshot convention for populated objects and points at a concrete example migration. Documentation that records what is deliberately unfinished is considerably more useful than documentation that describes only the happy path, and it is why D5 is framed as a prioritisation decision rather than a discovery."
+    }
+  ],
+
+  "inventory": [
+    { "item": "Data layer", "value": "MongoDB via Mongoose schemas defined in the `server` repository" },
+    { "item": "Branch / commit", "value": "Alpha/0.0.0.2 @ 6318f445 (2026-10-30 review)" },
+    { "item": "Collections added this cycle", "value": "invoices, candidates-payment-history, umbrellas, shifts, shift-whatsapp-offers, crm-permissions, whatsapp-inbox" },
+    { "item": "Index declarations", "value": "232 across entity definitions, including compound and unique indexes" },
+    { "item": "Unique constraints", "value": "13 — concentrated in collections added this cycle; users.email not among them" },
+    { "item": "Migrations", "value": "17 in src/migrations (15 at baseline), run by the `migrate` CLI with a TypeScript compiler" },
+    { "item": "Monetary representation", "value": "TypeScript `number` → MongoDB `double` throughout; Decimal128 used nowhere" },
+    { "item": "Transaction usage", "value": "4 call sites — none in invoices, payment history, umbrellas or rate cards" },
+    { "item": "Delete strategy", "value": "Hard deletes in 12 services; no soft-delete field on the base entity; no cascade" },
+    { "item": "Credentials", "value": "A single DATABASE_URL for API, queue workers and migrations" },
+    { "item": "Supporting stores", "value": "Redis (cache and Bull queues), Elasticsearch (search projection)" },
+    { "item": "Baseline findings resolved", "value": "0 of 4 closed; D3 and D2 partially improved by growing adoption elsewhere" }
+  ],
+
+  "releaseGates": [
+    { "gate": "Monetary correctness", "findingRefs": ["D1"], "devTest": "Warning", "prod": "Blocks", "status": "Open", "note": "Every amount in the platform is a binary float and the pattern was extended into invoices this cycle. Blocks because the output of the system — a client invoice and a worker payment — cannot be proven exact." },
+    { "gate": "Transactional integrity of financial writes", "findingRefs": ["D3"], "devTest": "Warning", "prod": "Warning", "status": "Open", "note": "Four transaction call sites exist, none financial; the four financial modules perform seventeen writes with no session. Warns rather than blocks because it needs a partial failure to manifest." },
+    { "gate": "Verified backup and restore", "findingRefs": [], "devTest": "Warning", "prod": "Blocks", "status": "Needs-runtime-check", "note": "No backup tooling, schedule or restore procedure in the repository (G1). If the hosting provider takes backups this clears on evidence; until then it blocks, and it must clear before the D1 migration runs." },
+    { "gate": "Identity uniqueness", "findingRefs": ["D2"], "devTest": "Clear", "prod": "Warning", "status": "Open", "note": "`users.email` is neither unique nor required. Warns because the application checks for duplicates on the normal paths; the database does not." },
+    { "gate": "Auditability of compliance changes", "findingRefs": ["D5"], "devTest": "Warning", "prod": "Warning", "status": "Open", "note": "No actor or timestamp on archive, restore or declaration changes. Read with server finding F2 — anonymous declaration writes — this means an unauthorised change to a regulatory record is undetectable." },
+    { "gate": "Index and query health", "findingRefs": [], "devTest": "Clear", "prod": "Clear", "status": "Pass", "note": "232 index declarations with good coverage of old and new collections. Passing on the schema evidence; G4 would confirm against real query patterns." },
+    { "gate": "Data protection at rest", "findingRefs": [], "devTest": "Warning", "prod": "Warning", "status": "Open", "note": "Personal and compliance data in plaintext with no field-level protection (G6), and one database credential for every purpose (G7)." },
+    { "gate": "Retention and growth control", "findingRefs": [], "devTest": "Clear", "prod": "Warning", "status": "Open", "note": "No retention policy or TTL anywhere (G5), and two of the collections added this cycle are append-mostly and grow with usage." }
+  ],
+
+  "phases": [
+    { "number": 1, "name": "Stabilisation & Risk Mitigation", "objective": "Fix monetary representation and establish the safety net that fixing it requires. D1 is the only P0 and it is a data migration, so the backup and recovery-objective work sits beside it deliberately — the migration recomputes derived totals across the financial chain and must not be the first operation to discover that no tested restore exists." },
+    { "number": 2, "name": "Integrity & Observability", "objective": "Close the integrity gaps around the money now that its representation is correct: transactions on the financial writes, a unique constraint on identity, an audit trail on compliance and account-state changes, and the database-level validation and query visibility that make all of it verifiable." },
+    { "number": 3, "name": "Protection & Governance", "objective": "Settle the longer-horizon data-protection questions — a deliberate delete and retention strategy, and field-level protection for the personal and compliance data that must be kept. Sequenced last because each is a policy decision as much as an implementation, and because the access-control fixes in the companion report should land first." }
+  ],
+
+  "architecturalRecommendations": [
+    { "aspect": "Monetary representation", "current": "Every amount is a TypeScript `number` stored as a 64-bit binary float, across rate cards, timesheets, shifts and now invoices. Decimal128 is used nowhere.", "recommended": "One exact representation applied consistently, with no float arithmetic anywhere in the money path.", "recommendation": "Adopt `Decimal128` with a decimal library at the application boundary, migrate existing documents, and recompute derived totals rather than converting them — a stored total may already differ from the sum of its lines." },
+    { "aspect": "Transactional boundaries", "current": "A correct `withTransaction` helper used in four places, none of them the four financial modules, which perform seventeen writes between them.", "recommended": "Every cross-collection financial write inside a session.", "recommendation": "Wrap invoice approval, payment-history writes and umbrella assignment, using `shifts.service.ts:568` as the in-house pattern, then add a reconciliation query for invoices without matching payment history and run it over existing data." },
+    { "aspect": "Constraints and validation", "current": "Thirteen unique constraints on new collections, none on user email; no `$jsonSchema` validator anywhere, so migrations and direct writes bypass all validation.", "recommended": "The database enforces the shape and the keys, with application validation as the first layer rather than the only one.", "recommendation": "Add a partial unique index on user email after deduplication, then generate `$jsonSchema` validators from the Mongoose schemas for the highest-value collections, starting in warn mode so existing non-conforming documents surface safely." },
+    { "aspect": "Record lifecycle", "current": "Hard deletes in twelve services, no soft-delete field, no cascade, and a bespoke archive flow for users only.", "recommended": "One convention for retiring a record that history still references.", "recommendation": "Generalise the user archive pattern into a `deletedAt` on the base entity with query middleware, apply it to the referenced entities, and sweep for existing orphans before changing behaviour." },
+    { "aspect": "Auditability", "current": "Two purpose-built history collections exist; archive, restore and declaration changes record nothing beyond `updatedAt`.", "recommended": "One shared audit facility covering every compliance and account-state change.", "recommendation": "Build a single `auditLog` collection or Mongoose plugin capturing actor, action, document and before/after diff, and apply it first to declarations, compliance records and archive/restore — alongside fixing the anonymous write path in the companion report." },
+    { "aspect": "Credential and access separation", "current": "A single `DATABASE_URL` serves request handling, queue workers and migrations, and ships inside the production image.", "recommended": "Scoped credentials per consumer, injected at runtime.", "recommendation": "Issue separate scoped users — application read-write, worker, and a DDL-capable migration user — and land it with the Secrets Manager work recommended in the companion report so none of them is baked into an artefact." },
+    { "aspect": "Data observability", "current": "No profiler, slow-query log or query timing; 232 indexes whose fit to real queries is unmeasured.", "recommended": "Query performance visible and attributable.", "recommendation": "Enable the profiler at a slow-query threshold, add Mongoose timing to the APM work in the companion report, and review the newest aggregations — reporting and invoicing — against the existing indexes first." }
+  ],
+
+  "suggestions": [
+    { "suggestion": "Settle the backup question before starting the D1 migration", "description": "The monetary migration rewrites values across the financial chain and recomputes totals. It is the single operation in this roadmap most likely to need a restore, and no tested restore currently exists. Confirming or establishing one is a precondition rather than a parallel task.", "impact": "Removes the possibility that the most valuable fix in this report becomes the incident that proves the backup gap." },
+    { "suggestion": "Decide the monetary representation once, for the whole platform", "description": "Decimal128 and integer minor units are both defensible; mixing them would be worse than either. The decision affects the entities, the DTOs, the presenters and the client applications that consume the values, so it is worth an explicit decision record rather than an implementation choice made per module.", "impact": "Prevents a partial migration leaving two representations in the same financial chain, which would be harder to reason about than the current single wrong one." },
+    { "suggestion": "Audit the existing data for the inconsistencies these findings permit", "description": "Three findings describe states the database currently allows: duplicate or missing user emails (D2), invoices without matching payment history (D3) and orphaned references from hard deletes (D4). Each has a straightforward detection query, and each backlog needs to be known before the corresponding constraint or convention is applied.", "impact": "Turns three latent data questions into a measured backlog, and prevents constraint creation failing on data nobody had looked at." },
+    { "suggestion": "Read this report alongside novello-server", "description": "Two findings only make full sense together: the companion report's unauthenticated declaration writes combined with D5's missing audit trail mean a compliance record can be altered untraceably, and its read-preference defect is the clearest illustration of why G4 matters. Neither report states the whole picture alone.", "impact": "Ensures the compliance-integrity risk is seen as one issue with one owner rather than two findings in separate documents." }
+  ],
+
+  "capabilities": [
+    { "practice": "Exact monetary representation", "status": "absent", "notes": "Every amount is a TypeScript `number` stored as a binary float; `Decimal128` appears nowhere, and `invoices.total` added this cycle follows the same pattern (D1)." },
+    { "practice": "Transactional multi-document writes", "status": "partial", "notes": "A correct `withTransaction` helper with four adopters, none of them the four financial modules, which perform seventeen writes between them (D3)." },
+    { "practice": "Index coverage for access patterns", "status": "good", "notes": "232 index declarations with good distribution into the new collections, including compound unique indexes where the pattern needs them." },
+    { "practice": "Database-enforced uniqueness", "status": "partial", "notes": "Thirteen `unique: true` constraints, concentrated in collections added this cycle; `users.email` remains neither unique nor required (D2)." },
+    { "practice": "Database-level schema validation", "status": "absent", "notes": "No `$jsonSchema` validator on any collection, so migrations and direct writes bypass validation entirely (G3)." },
+    { "practice": "Referential cleanup on delete", "status": "absent", "notes": "Hard deletes in twelve services, no soft-delete field on the base entity, no cascade declared anywhere (D4)." },
+    { "practice": "Audit trail on sensitive changes", "status": "partial", "notes": "Purpose-built history collections exist for timesheet specialism and notification preferences; archive, restore and declaration changes record nothing beyond `updatedAt` (D5)." },
+    { "practice": "Versioned migrations", "status": "good", "notes": "17 migrations under `src/migrations` with a `migrate` CLI, a template generator, up/down scripts and a store — and a dedicated production migrator task per the companion report." },
+    { "practice": "Verified backup and restore", "status": "absent", "notes": "No backup tooling, schedule, documentation or restore procedure anywhere in the repository (G1), and no recovery objectives defined (G2)." },
+    { "practice": "Query performance visibility", "status": "absent", "notes": "No profiler configuration, slow-query log or query timing, and no APM in the dependency tree (G4)." },
+    { "practice": "Data retention and archival", "status": "absent", "notes": "No policy, TTL index or archival path; two collections added this cycle are append-mostly and grow with usage (G5)." },
+    { "practice": "Protection of personal data at rest", "status": "absent", "notes": "No field-level encryption; candidate identifiers, compliance outcomes and health declarations are stored in plaintext (G6)." },
+    { "practice": "Credential separation by purpose", "status": "absent", "notes": "A single `DATABASE_URL` — correctly `required()` now — serves API, workers and migrations alike (G7)." },
+    { "practice": "Configuration validated at boot", "status": "good", "notes": "`DATABASE_URL: Joi.string().required()`, part of the environment-schema rewrite that closed both credential P0s in the companion report." }
+  ],
+
+  "architecturalNarrative": "This data layer has two distinct vintages and the difference between them is sharper here than anywhere else in the Novello estate. The collections added this cycle are well made: indexed on the fields they are queried by, constrained with `unique` where a key demands it, including a compound unique index on WhatsApp shift acceptances that both serves the lookup and prevents a duplicate in one declaration. Transaction usage has quadrupled. The migration tooling is proper — a template generator, up and down scripts, a store, and now a dedicated production migrator task. None of that was true of the schema as a whole in July.\n\nAnd yet not one of the four baseline findings is closed, because all four sit on the oldest and most consequential data in the system. Money is still a binary float, and this cycle put `invoices.total` — the figure a client is actually billed — into the same representation. The four financial modules, three of them new, perform seventeen writes between them without ever touching the transaction helper that four other modules now use. User email, the field everything identifies people by, is still neither unique nor required while thirteen newer collections constrain their own keys properly. The pattern is consistent and worth naming plainly: the team's practice has improved and the improvement has not been applied backwards.\n\nThe monetary finding deserves separate emphasis because it is the only one here that is continuously true rather than contingent. The others need something to happen — a partial failure, a duplicate insert, a delete — before they bite. D1 degrades every amount the platform stores, every time, in a direction that cannot be recovered after the fact, along a chain that multiplies and sums: rate card to timesheet to invoice to payment. A staffing business's entire output is the accuracy of those two numbers.\n\nAround all of it, the data-protection and resilience posture has not moved at all. All seven capability gaps from July remain open, including the one that matters most in combination with the D1 migration: there is still no backup tooling, schedule or tested restore anywhere in the repository. Personal and compliance data is stored in plaintext with a single credential that the companion report shows ships inside the container image. There is no retention policy, and two of the new collections grow with usage rather than with headcount. And there is no query observability at all, which is why a read-preference defect that has been concentrating load on the primary for months went unnoticed — a reminder that this layer is currently operated by inference rather than by measurement.",
+
+  "lookingAhead": "Phase 1 is thirteen days and does one thing: makes money exact, with the backup and recovery work that the migration itself requires sitting beside it rather than after it. That ordering is the main judgement call in this roadmap — D1 is a data migration across the financial chain that recomputes derived totals, and it should not be the operation that discovers whether a restore works.\n\nPhase 2 then closes the integrity gaps around the money now that its representation is right: transactions on the financial writes, which is a small change given the helper already exists and has four working examples to copy; a partial unique index on email once the duplicates are resolved; and one shared audit facility generalising the change-log pattern the codebase already has. The database-level validators and the profiler belong here too, because they are what make the rest verifiable rather than assumed.\n\nThe longer-horizon items — a delete and retention strategy, field-level protection for personal data — are deliberately last, because each is a policy decision as much as an implementation and because the access-control findings in the companion report should land first. Encrypting a declaration collection that an anonymous caller can still write to would be solving the second problem while the first is open. Read the two reports together: the compliance-integrity risk they describe between them is one issue, and it needs one owner."
+}

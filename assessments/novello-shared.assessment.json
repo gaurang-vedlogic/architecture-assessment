@@ -1,0 +1,538 @@
+{
+  "meta": {
+    "app": "novello-shared",
+    "productName": "Novello Shared Contracts",
+    "client": "Novello Healthcare",
+    "org": "Novello",
+    "repository": "gitlab.com/appollo79/shared",
+    "repoPath": "D:/repos/novello/shared",
+    "branch": "main",
+    "commit": "c540bcb",
+    "version": "2.1.230",
+    "stack": "TypeScript 4.6 · published as @appollo79/shared · consumed by all five sibling applications",
+    "reviewDate": "2026-07-29",
+    "assessmentType": "Technical Landscape Assessment & Recommendations Report",
+    "documentStatus": "CONFIDENTIAL",
+    "scope": "Manual static review of the `main` branch of the shared contracts package: its content, its build and publish model, and — most importantly — how the five consuming repositories declare and resolve it. This package is small, so the review is proportionate; the findings concern distribution and governance rather than the code itself."
+  },
+  "verdict": {
+    "prod": "APPROVE_WITH_CONDITIONS",
+    "devTest": "APPROVED",
+    "summary": "**The package itself is sound.** 2,107 lines of types, enums, constants, error classes and response shapes. No runtime logic, no I/O, no credentials — so almost no attack surface. Nothing here blocks a release.\n\n**The problem is how it is consumed:**\n\n- `server` and `client-app` declare it as `file:.yalc/@appollo79/shared` — a local path that is gitignored and not committed, so a clean clone cannot resolve it.\n- The other three consume it from the registry at ranges that have drifted apart, with `client-portal` pinned 195 versions behind current.\n\n**Why conditional rather than blocking.** This is a governance condition, not a defect — but it is the reason onboarding and CI in the two affected repositories cannot be trusted to reproduce.",
+    "blockers": []
+  },
+  "objective": {
+    "narrative": "To assess the shared contracts package that underpins all five Novello applications, focusing on its distribution model and the consistency with which its consumers resolve it. Because this package defines the types every other repository builds against, drift here propagates silently into all of them.",
+    "metrics": [
+      {
+        "value": "2.1k",
+        "label": "Lines Reviewed",
+        "detail": "52 TypeScript files, no runtime logic"
+      },
+      {
+        "value": "5",
+        "label": "Total Findings",
+        "detail": "P0=0  P1=3  P2=2"
+      },
+      {
+        "value": "5",
+        "label": "Consumers",
+        "detail": "2 via local path · 3 via registry"
+      },
+      {
+        "value": "2",
+        "label": "Missing Capabilities",
+        "detail": "recommended additions"
+      },
+      {
+        "value": "11",
+        "label": "Est. Total Effort",
+        "detail": "Man-days across all phases"
+      }
+    ]
+  },
+  "executiveSummary": "**What this is.** The contract layer for the Novello estate — enums, constants, error types, request and response interfaces. No runtime logic, no I/O, no credentials, so its own risk surface is close to zero. The code is clean and the structure sensible.\n\n**The assessment is almost entirely about distribution, and there the picture is poor:**\n\n- Published at 2.1.230.\n- `client-crm` and `novello-mobile` request `^2.1.226` — close enough to be harmless.\n- `client-portal` requests `^2.1.35`, 195 releases behind, so it builds against a contract the backend stopped honouring long ago.\n- `server` and `client-app` bypass the registry entirely with `file:.yalc/@appollo79/shared`.\n\n**The last point has immediate operational consequence:**\n\n- `.yalc/` appears in both repositories' `.gitignore` files and is not committed.\n- The path the dependency points at does not exist in a fresh clone.\n- Anyone onboarding, and any CI runner starting from a clean checkout, cannot install those two projects without an undocumented manual link step.\n\n**Also missing.** No tests and no CI pipeline. For a types-only package the absence of unit tests is defensible; the absence of any build verification before publish is less so, because a broken type export reaches five consumers at once.",
+  "scorecard": {
+    "narrative": "Scored against a reduced dimension set. Scalability, observability and data integrity are not meaningful for a package with no runtime behaviour, so they are omitted rather than scored arbitrarily.",
+    "dimensions": [
+      {
+        "id": "architecture",
+        "label": "Architecture Quality",
+        "current": 3.5,
+        "target": 4,
+        "keyGap": "Clean separation into const, enums, errors, interfaces, responses and types, with a single entry point. Appropriate for its purpose — a contract package should be exactly this thin. Nothing structural to fix."
+      },
+      {
+        "id": "security",
+        "label": "Security Posture",
+        "current": 4,
+        "target": 4.5,
+        "keyGap": "No runtime logic, no I/O, no credentials — verified: the credential pattern found in the `server` repository does not appear here. The residual concern is supply-chain rather than code: two consumers resolve this package from an untracked local path, which is not a verifiable provenance (S1)."
+      },
+      {
+        "id": "maintainability",
+        "label": "Code Maintainability",
+        "current": 2.5,
+        "target": 3.5,
+        "keyGap": "Readable and consistently organised, but with no tests and no type-level regression checks (S4). TypeScript 4.6 is several major versions behind, which holds back every consumer that must stay compatible with it (S5)."
+      },
+      {
+        "id": "devops",
+        "label": "DevOps Maturity",
+        "current": 1.5,
+        "target": 4,
+        "keyGap": "No CI pipeline at all — no build verification, no publish automation, no gate before a version reaches five consumers (S3). Two consumers depend on an untracked local path so cannot be installed from a clean clone (S1), and consumer versions have drifted up to 195 releases apart (S2)."
+      }
+    ]
+  },
+  "capabilities": [
+    {
+      "practice": "No credentials in source",
+      "status": "good",
+      "notes": "Swept for AWS, SendGrid, Google, MongoDB and private-key patterns — clean. The `server` repository's credential exposure did not spread here."
+    },
+    {
+      "practice": "Reproducible install from clean clone",
+      "status": "absent",
+      "notes": "`server` and `client-app` declare `file:.yalc/@appollo79/shared`, which is gitignored and untracked in both (S1)."
+    },
+    {
+      "practice": "Consistent consumer versions",
+      "status": "absent",
+      "notes": "2.1.230 published; consumers at ^2.1.226, ^2.1.226, ^2.1.35 and two local links (S2)."
+    },
+    {
+      "practice": "CI build verification",
+      "status": "absent",
+      "notes": "No `.gitlab-ci.yml` or equivalent in the repository (S3)."
+    },
+    {
+      "practice": "Automated tests",
+      "status": "absent",
+      "notes": "Zero test files. Partly defensible for a types package, but no type-level regression check exists either (S4)."
+    },
+    {
+      "practice": "Single entry point / clear public surface",
+      "status": "good",
+      "notes": "`main` resolves to `dist/index.js` with a single `src/index.ts` barrel; `dist` is correctly gitignored rather than committed."
+    },
+    {
+      "practice": "Current toolchain",
+      "status": "partial",
+      "notes": "TypeScript 4.6, released 2022. Every consumer is pinned near the same version as a consequence (S5)."
+    }
+  ],
+  "systemModel": {
+    "purpose": "A contract package defining the types, enums, constants, error classes and response shapes shared between the Novello server and its four client applications. It is the single point through which the backend's API contract reaches every frontend, which makes version drift here equivalent to silent contract drift across the estate.",
+    "actors": "No runtime actors — the package is compiled into its consumers. The relevant actors are the developers who publish it and the five repositories that resolve it. Its trust boundary is the package registry and, for two consumers, a developer's local filesystem.",
+    "dataFlows": "Author publishes a version → registry (three consumers) or local yalc link (two consumers) → compiled into each application at build time. There is no gate between publish and consumption.",
+    "invariants": [
+      {
+        "statement": "Every consumer can be installed from a clean clone with no manual steps",
+        "status": "VIOLATED",
+        "findingId": "S1",
+        "note": "`server` and `client-app` point at an untracked local path."
+      },
+      {
+        "statement": "All consumers build against a compatible contract version",
+        "status": "VIOLATED",
+        "findingId": "S2",
+        "note": "`client-portal` is 195 releases behind."
+      },
+      {
+        "statement": "A published version has been verified to compile",
+        "status": "VIOLATED",
+        "findingId": "S3",
+        "note": "No CI exists; publishing is unverified."
+      },
+      {
+        "statement": "The package contains no credentials or secrets",
+        "status": "HOLDS",
+        "note": "Verified by pattern sweep across the full source tree."
+      },
+      {
+        "statement": "The package has no runtime dependencies that could execute code in a consumer",
+        "status": "HOLDS",
+        "note": "Types, enums and constants only; no I/O and no side-effecting module initialisation."
+      }
+    ]
+  },
+  "threatModel": "The direct attack surface is negligible — there is no runtime logic to exploit. The meaningful risk is supply-chain and integrity rather than exploitation: because two consumers resolve this package from an unversioned local directory rather than a registry, what actually gets compiled into `server` and `client-app` depends on the state of an individual developer's filesystem at build time. There is no lockfile entry, no integrity hash and no provenance for those two builds. A wrong or stale local copy produces a silently divergent build with no signal. This is an integrity concern for correctness first and a supply-chain concern second.",
+  "coverage": {
+    "method": "Manual static review of the full source tree — the package is small enough to read in its entirety. Consumer resolution was established by reading all five sibling `package.json` files and verifying tracked status with `git ls-files`.",
+    "size": "2,107 lines across 52 TypeScript files in `src/`, organised into const, enums, errors, interfaces, responses and types.",
+    "deepRead": [
+      "`package.json` — entry points, version, publish configuration",
+      "`.gitignore` — confirming `dist` and `.yalc` exclusion",
+      "`src/` folder structure and entry barrel",
+      "All five consuming `package.json` files for the `@appollo79/shared` declaration",
+      "`server/.gitignore` and `client-app/.gitignore` to confirm `.yalc` is untracked"
+    ],
+    "grepSwept": [
+      "Credential patterns (AWS, SendGrid, Google, MongoDB URI, private keys) across the full tree — clean",
+      "`@appollo79/shared` declarations across all sibling repositories"
+    ],
+    "notRead": [
+      "Individual type definitions were skimmed rather than reviewed line by line — the assessment concerns distribution, not the correctness of individual interfaces",
+      "`dist/` build output"
+    ],
+    "caveats": [
+      "Whether CI currently succeeds for `server` and `client-app` was not observed. The `file:` dependency on an untracked path cannot resolve from a clean checkout, but the pipelines may perform a yalc link step that is not visible in the repository. S1 is Confirmed as to the declaration and the untracked status; the operational consequence for CI specifically is inferred and marked in the finding.",
+      "Whether the contract drift in `client-portal` has produced actual runtime breakage was not tested — it is a latent risk, not an observed failure.",
+      "The registry itself was not queried, so the published version history and whether 2.1.230 is actually the latest published release were not independently confirmed."
+    ]
+  },
+  "findings": [
+    {
+      "id": "S1",
+      "title": "Two consumers depend on an untracked local path",
+      "ruleId": "DEP-005",
+      "group": "Distribution & Governance",
+      "layer": "Infrastructure",
+      "dimension": "devops",
+      "riskDimension": "Reliability",
+      "criticality": "High",
+      "priority": "P1",
+      "phase": 1,
+      "confidence": "Confirmed",
+      "claim": "`server` and `client-app` declare the shared package as `file:.yalc/@appollo79/shared`, a directory that both repositories gitignore and neither commits, so the dependency cannot resolve from a clean clone.",
+      "evidence": [
+        {
+          "file": "server/package.json",
+          "line": 37,
+          "snippet": "\"@appollo79/shared\": \"file:.yalc/@appollo79/shared\",",
+          "note": "A local filesystem path, not a registry version."
+        },
+        {
+          "file": "client-app/package.json",
+          "line": 7,
+          "note": "Identical declaration."
+        },
+        {
+          "file": "shared/.gitignore",
+          "note": "`.yalc/*` and `yalc.lock` are excluded; `git ls-files .yalc` returns zero entries in both consuming repositories, confirming the directory is untracked."
+        },
+        {
+          "file": "server/.dockerignore",
+          "note": "Does not exclude `.yalc`, but the Dockerfile runs `npm ci` before `COPY . .`, so the path is absent at install time regardless."
+        }
+      ],
+      "reasoning": "A `file:` dependency on an untracked path means the installed content is whatever happens to be on the building machine, with no lockfile integrity hash and no version recorded. Two consequences follow: a fresh clone cannot be installed without an undocumented manual `yalc link` step, and two of the five applications have no verifiable record of which contract version they were actually built against.",
+      "reproduction": "Clone `server` into a clean directory and run `npm ci`; the `file:.yalc/@appollo79/shared` path does not exist.",
+      "impact": "Makes every application installable and buildable from a clean checkout with a recorded, verifiable dependency version, removing an undocumented manual step from onboarding and CI.",
+      "refutation": "Checked whether `.yalc` might be committed despite the gitignore entry — `git ls-files .yalc` returns nothing in both repositories, so it is genuinely absent from version control. Also checked whether an `.npmrc` private registry might make the `file:` specifier resolve differently; it does not, as `file:` is a filesystem path regardless of registry configuration. Survives. Marked Confirmed for the declaration and tracked status; the specific claim that CI currently fails is not asserted, since the pipelines may contain a link step not visible in the repository.",
+      "remediation": "Switch both consumers to a registry semver range, as `client-crm` and `novello-mobile` already do. Keep yalc for local development only, via the existing `start:dev` and `start:local` scripts which already perform the link — the `dependencies` entry should name a published version.",
+      "effortDays": 1,
+      "role": "DevOps Engineer"
+    },
+    {
+      "id": "S2",
+      "title": "Consumer versions have drifted up to 195 releases apart",
+      "ruleId": "DEP-005",
+      "group": "Distribution & Governance",
+      "layer": "Infrastructure",
+      "dimension": "architecture",
+      "riskDimension": "Maintainability",
+      "criticality": "High",
+      "priority": "P1",
+      "phase": 2,
+      "confidence": "Confirmed",
+      "claim": "The published package is at 2.1.230, but consumers request ranges spanning from ^2.1.35 to ^2.1.226, so the estate is building against materially different versions of the same contract.",
+      "evidence": [
+        {
+          "file": "shared/package.json",
+          "note": "Published version 2.1.230 at commit c540bcb."
+        },
+        {
+          "file": "client-portal/package.json",
+          "line": 6,
+          "snippet": "\"@appollo79/shared\": \"^2.1.35\",",
+          "note": "195 releases behind the current version."
+        },
+        {
+          "file": "client-crm/package.json",
+          "line": 7,
+          "note": "`^2.1.226` — near current."
+        },
+        {
+          "file": "novello-mobile/package.json",
+          "line": 19,
+          "note": "`^2.1.226` — near current."
+        }
+      ],
+      "reasoning": "Violates the invariant that all consumers build against a compatible contract. Because the ranges are caret ranges within the same major version, npm will resolve each to the newest 2.x — but the *declared* floor differs enormously, and the types each project was written against differ accordingly. `client-portal` was authored against a contract 195 releases old; any field the backend has since renamed or removed is a latent runtime failure that the compiler will not catch, because the resolved version satisfies the range either way.",
+      "impact": "Aligns every application on one contract version so type checking reflects the API the backend actually serves, converting latent runtime drift into build-time errors.",
+      "refutation": "Considered whether caret ranges make this harmless, since all four would resolve to the latest 2.x at install time. Not fully — the resolved version is only equal if every consumer reinstalls simultaneously, and committed lockfiles pin each project to whatever was current when it last installed. The declared floor is the honest signal of what each project was developed against.",
+      "remediation": "Align all five consumers on the current version, then upgrade them together on a regular cadence. Verify `client-portal` compiles against current before pinning it, as 195 releases of drift is likely to surface real breakage.",
+      "effortDays": 3,
+      "role": "Full-Stack Engineer",
+      "rationale": "Sequenced into Phase 2 rather than Phase 1: aligning versions is only durable once S1 has moved the two local-path consumers onto the registry, and the client-portal gap is large enough to need its own verification pass."
+    },
+    {
+      "id": "S3",
+      "title": "No CI pipeline",
+      "ruleId": "DVO-001",
+      "group": "Distribution & Governance",
+      "layer": "Infrastructure",
+      "dimension": "devops",
+      "riskDimension": "Reliability",
+      "criticality": "Medium",
+      "priority": "P1",
+      "phase": 1,
+      "confidence": "Confirmed",
+      "claim": "The repository contains no CI configuration, so no build, type check or verification runs before a version is published to five consumers.",
+      "evidence": [
+        {
+          "file": "shared/",
+          "note": "No `.gitlab-ci.yml`, `.github/workflows/`, `Jenkinsfile` or equivalent — unlike `server`, which has a GitLab pipeline."
+        }
+      ],
+      "reasoning": "This package is the contract layer for the entire estate, so a broken or accidentally removed type export reaches five applications at once. It is also the smallest and cheapest repository to gate — a single job running `tsc --noEmit` and a build would cover essentially all of its risk.",
+      "impact": "Ensures a published contract version has been verified to compile before five consuming applications depend on it.",
+      "remediation": "Add a minimal pipeline: install, `tsc --noEmit`, build. Publish on tag rather than manually, so the published artefact is always one that passed.",
+      "effortDays": 1,
+      "role": "DevOps Engineer"
+    },
+    {
+      "id": "S4",
+      "title": "No tests or type-level regression checks",
+      "ruleId": "TST-001",
+      "group": "Code Quality",
+      "layer": "Backend",
+      "dimension": "maintainability",
+      "riskDimension": "Maintainability",
+      "criticality": "Low",
+      "priority": "P2",
+      "phase": 3,
+      "confidence": "Confirmed",
+      "claim": "The package has no test files and no mechanism for detecting a breaking change to its public type surface.",
+      "evidence": [
+        {
+          "file": "shared/",
+          "note": "Zero `*.spec.ts` or `*.test.ts` files; no test script in `package.json`."
+        }
+      ],
+      "reasoning": "For a types-only package the absence of unit tests is largely defensible — there is little runtime behaviour to assert. What is missing and does matter is any check that a change to the public surface is intentional: a removed or renamed export currently reaches consumers with no signal.",
+      "impact": "Surfaces unintended breaking changes to the shared contract before publication rather than after five applications have consumed them.",
+      "remediation": "Rather than conventional unit tests, add an API-surface snapshot — generate a public type declaration and commit it, so any change to the exported surface appears in review as a visible diff. Combine with the type check from S3.",
+      "effortDays": 2,
+      "role": "Backend Engineer"
+    },
+    {
+      "id": "S5",
+      "title": "TypeScript toolchain several major versions behind",
+      "ruleId": "DEP-003",
+      "group": "Code Quality",
+      "layer": "Infrastructure",
+      "dimension": "maintainability",
+      "riskDimension": "Maintainability",
+      "criticality": "Low",
+      "priority": "P2",
+      "phase": 3,
+      "confidence": "Confirmed",
+      "claim": "The package is built with TypeScript 4.6, and every consumer is pinned to a comparable version to stay compatible.",
+      "evidence": [
+        {
+          "file": "shared/package.json",
+          "note": "`typescript: ^4.6.2`."
+        },
+        {
+          "file": "client-crm/package.json",
+          "note": "`^4.6.2`; client-app `^4.6.3`; client-portal `^4.9.5`; novello-mobile `^4.9.4` — the estate is anchored near this version."
+        }
+      ],
+      "reasoning": "Because this package defines the types everything else consumes, its TypeScript version sets a practical ceiling for the estate. The consequence is not a defect today but an accumulating one: newer language and type-checking features stay unavailable, and the eventual upgrade grows.",
+      "impact": "Unblocks the whole estate from adopting current TypeScript features and stricter type checking, and keeps the eventual upgrade small rather than deferred.",
+      "remediation": "Upgrade this package first, then the consumers in dependency order. Because the package is small and has no runtime logic, it is the lowest-risk place in the estate to start.",
+      "effortDays": 1,
+      "role": "Backend Engineer"
+    }
+  ],
+  "refutedCandidates": [
+    {
+      "claim": "The credential-as-schema-default pattern found in `server` has spread to the shared package.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "Swept the full source tree for AWS key, SendGrid key, Google API key, MongoDB URI and private-key patterns. Clean. The same sweep across `client-crm`, `client-app`, `client-portal` and `novello-mobile` was also clean, which narrows the credential exposure in the estate to the `server` repository alone."
+    },
+    {
+      "claim": "Build output (`dist/`) is committed to the repository.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "`dist` is listed in `.gitignore` and `git ls-files dist` returns nothing. The directory exists locally as a build artefact only."
+    },
+    {
+      "claim": "The package can execute code in its consumers at install or import time.",
+      "verdict": "Refuted",
+      "step": 3,
+      "reasoning": "Contents are types, enums, constants, error classes and interfaces. There are no install lifecycle scripts and no side-effecting module initialisation, so importing it cannot run behaviour."
+    }
+  ],
+  "positivePosture": [
+    {
+      "title": "Appropriately thin",
+      "detail": "A contract package should contain types and nothing else, and this one does. No runtime logic, no I/O, no dependencies that could execute in a consumer. Its risk surface is genuinely close to zero, and that is a design choice worth preserving."
+    },
+    {
+      "title": "Clean public surface",
+      "detail": "A single `src/index.ts` barrel with contents organised into const, enums, errors, interfaces, responses and types. `dist` is gitignored rather than committed, and `main` resolves correctly."
+    },
+    {
+      "title": "No credential exposure",
+      "detail": "Verified by pattern sweep. Given the findings in the `server` repository, confirming that this package — and the other four consumers — are clean materially reduces the scope of the required credential rotation."
+    }
+  ],
+  "inventory": [
+    {
+      "item": "Source",
+      "value": "2,107 lines across 52 TypeScript files"
+    },
+    {
+      "item": "Published version",
+      "value": "2.1.230"
+    },
+    {
+      "item": "Consumers",
+      "value": "5 (server, client-app, client-crm, client-portal, novello-mobile)"
+    },
+    {
+      "item": "Consumers via untracked local path",
+      "value": "2 (server, client-app)"
+    },
+    {
+      "item": "Widest version gap",
+      "value": "195 releases (client-portal at ^2.1.35)"
+    },
+    {
+      "item": "Runtime dependencies",
+      "value": "0"
+    },
+    {
+      "item": "Tests",
+      "value": "0"
+    },
+    {
+      "item": "CI pipeline",
+      "value": "None"
+    }
+  ],
+  "releaseGates": [
+    {
+      "gate": "Secrets in version control",
+      "note": "none found — swept clean",
+      "devTest": "Clear",
+      "prod": "Clear",
+      "status": "Pass"
+    },
+    {
+      "gate": "Installable from clean clone",
+      "findingRefs": [
+        "S1"
+      ],
+      "devTest": "Blocks",
+      "prod": "Warning",
+      "status": "Open"
+    },
+    {
+      "gate": "Consumers on a compatible contract",
+      "findingRefs": [
+        "S2"
+      ],
+      "devTest": "Warning",
+      "prod": "Warning",
+      "status": "Open"
+    },
+    {
+      "gate": "Published artefact verified to build",
+      "findingRefs": [
+        "S3"
+      ],
+      "devTest": "Warning",
+      "prod": "Warning",
+      "status": "Open"
+    },
+    {
+      "gate": "Package can execute code in consumers",
+      "note": "verified — types only, no lifecycle scripts",
+      "devTest": "Clear",
+      "prod": "Clear",
+      "status": "Pass"
+    }
+  ],
+  "phases": [
+    {
+      "number": 1,
+      "name": "Stabilisation & Risk Mitigation",
+      "objective": "Make every consumer installable from a clean clone, and gate publication behind a build."
+    },
+    {
+      "number": 2,
+      "name": "Architecture & Scalability",
+      "objective": "Align the estate on one contract version, verifying the largest gap as a small migration."
+    },
+    {
+      "number": 3,
+      "name": "Optimisation & Governance",
+      "objective": "Protect the public type surface from unintended change and unblock the estate TypeScript upgrade."
+    }
+  ],
+  "suggestions": [
+    {
+      "suggestion": "Publish on tag, never by hand",
+      "description": "Wire the CI job from S3 to publish when a version tag is pushed, so the artefact consumers receive is always one that compiled in a clean environment.",
+      "impact": "Removes the possibility of publishing from an inconsistent local working tree, and gives every published version a traceable commit."
+    },
+    {
+      "suggestion": "Reserve yalc for local development only",
+      "description": "The `start:dev` and `start:local` scripts in `server` and `client-crm` already perform the yalc link at run time. That is the correct place for it — the `dependencies` entry should always name a published version.",
+      "impact": "Preserves the fast local feedback loop the team clearly values while restoring reproducible installs and lockfile integrity."
+    },
+    {
+      "suggestion": "Upgrade this package first when modernising the estate",
+      "description": "Because it sets the TypeScript ceiling for all five consumers and contains no runtime logic, it is the lowest-risk starting point for any toolchain upgrade.",
+      "impact": "Unblocks four downstream applications from a single low-risk change."
+    }
+  ],
+  "architecturalNarrative": "There is nothing to restructure here. The recommendations concern the boundary between this package and the applications that consume it.",
+  "architecturalRecommendations": [
+    {
+      "aspect": "Dependency resolution",
+      "current": "Two consumers resolve from an untracked local yalc directory; three from registry ranges spanning 195 releases.",
+      "recommended": "All five on registry semver, aligned on a current version, with yalc used only for local development.",
+      "recommendation": "S1 and S2 together — they touch the same five `package.json` files and are best verified in one pass."
+    },
+    {
+      "aspect": "Publication",
+      "current": "Manual publish with no build verification.",
+      "recommended": "Tag-triggered CI publish gated on a type check and build.",
+      "recommendation": "S3 — the smallest repository in the estate and the cheapest place to establish the pattern."
+    }
+  ],
+  "lookingAhead": "This is the healthiest repository in the Novello estate, and the review reflects that: no credentials, no runtime risk, nothing structural to change. Confirming it clean also did useful work for the wider picture — together with the sweeps across the four client applications, it narrows the credential rotation triggered by the `server` findings to that repository alone.\n\nThe work identified here is governance, and it is cheap: roughly five days to make every application installable from a clean clone against a known contract version, and to gate publication behind a build. Because this package sits underneath the other five, doing that work early makes every subsequent repository in this programme easier to reason about.",
+  "gaps": [
+    {
+      "capability": "Automated publish pipeline",
+      "area": "Delivery",
+      "status": "missing",
+      "why": "Publishing is manual and unverified, so a broken type export can reach five consuming applications at once with nothing having checked that it compiles.",
+      "recommendation": "Add a tag-triggered CI job running a type check and build, then publishing. Never publish from a local working tree.",
+      "priority": "P1",
+      "phase": 1,
+      "effortDays": 1,
+      "role": "DevOps Engineer",
+      "layer": "Infrastructure"
+    },
+    {
+      "capability": "Public API surface change detection",
+      "area": "Quality",
+      "status": "missing",
+      "why": "Nothing detects that a change removes or renames an exported type. Because five applications compile against this package, a breaking change is only discovered downstream.",
+      "recommendation": "Generate and commit a public type-declaration snapshot so any change to the exported surface appears as a reviewable diff.",
+      "priority": "P2",
+      "phase": 3,
+      "effortDays": 2,
+      "role": "Backend Engineer",
+      "layer": "Infrastructure"
+    }
+  ]
+}

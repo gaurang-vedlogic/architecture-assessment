@@ -1,0 +1,609 @@
+{
+  "meta": {
+    "app": "novello-client-portal",
+    "productName": "Novello Client Portal",
+    "client": "Novello Healthcare",
+    "org": "Novello",
+    "repository": "gitlab.com/appollo79/client-portal",
+    "repoPath": "D:/repos/novello/client-portal",
+    "branch": "main",
+    "commit": "cbf0593",
+    "version": "0.1.0",
+    "stack": "React 18 · Create React App · Ant Design 4 · Redux Toolkit · axios 1.4 · TypeScript 4.9",
+    "reviewDate": "2026-07-29",
+    "assessmentType": "Technical Landscape Assessment & Recommendations Report",
+    "documentStatus": "CONFIDENTIAL",
+    "scope": "Manual static review of the `main` branch of the client-facing portal: session storage, the API client, rendering safety, dependency currency and CI. Backend behaviour, including the encrypted access-link mechanism this portal depends on, is covered by the `novello-server` assessment."
+  },
+  "verdict": {
+    "prod": "APPROVE_WITH_CONDITIONS",
+    "devTest": "APPROVED",
+    "summary": "**The cleanest of the three web front ends.** At 4,380 lines it has no `dangerouslySetInnerHTML` anywhere, so the injection chain blocking its two siblings does not exist here. An error boundary is present and axios is on the current 1.x line.\n\n**Not blocked, but three conditions should clear:**\n\n- The bearer token is held in `localStorage` — same pattern as its siblings, fixable by the same shared change.\n- There are no tests at all.\n- It consumes `@appollo79/shared` at `^2.1.35` against a published 2.1.230 — 195 releases of drift, by far the widest gap in the estate.\n\n**Why conditional rather than blocking.** Without an injection sink, the token-storage weakness has no demonstrated path to exploitation within this application.",
+    "blockers": []
+  },
+  "objective": {
+    "narrative": "To assess the client-facing portal against the rule catalog and to place its findings alongside the other three Novello front ends, so the shared remediation can be sequenced as one programme rather than four.",
+    "metrics": [
+      {
+        "value": "4.4k",
+        "label": "Lines Reviewed",
+        "detail": "130 files, none of them tests"
+      },
+      {
+        "value": "6",
+        "label": "Total Findings",
+        "detail": "P0=0  P1=4  P2=2"
+      },
+      {
+        "value": "195",
+        "label": "Contract Drift",
+        "detail": "releases behind the shared package"
+      },
+      {
+        "value": "2",
+        "label": "Missing Capabilities",
+        "detail": "recommended additions"
+      },
+      {
+        "value": "18",
+        "label": "Est. Total Effort",
+        "detail": "Man-days across all phases"
+      }
+    ]
+  },
+  "executiveSummary": "**What this is.** The portal through which Novello's client organisations view and manage bookings, sites and staffing. ~4,380 lines across 130 files — an order of magnitude smaller than the CRM, and its risk profile is genuinely lower as a result.\n\n**The strongest of the three web apps:**\n\n- Zero `dangerouslySetInnerHTML` occurrences — the only front end where this holds, and the reason it is not production-blocked.\n- axios 1.4 and TypeScript 4.9, ahead of the 0.26 and 4.6 its siblings carry.\n- Error boundary present.\n\n**Shared estate-wide issues:**\n\n- Bearer token in `localStorage`.\n- No tests whatsoever — the only Novello repository with a complete absence.\n- CI `test` stage runs Sonar only, `allow_failure: true`.\n- No error reporting.\n\n**One issue specific to this repository — contract drift:**\n\n- Declares `@appollo79/shared` at `^2.1.35`; the package is published at 2.1.230.\n- The types this application was authored against describe an API the backend stopped serving long ago.\n- Because the caret range still resolves forward, the compiler will not necessarily object.\n- This makes it the most likely place in the estate for a silent runtime contract failure.\n\n**Also.** The build step runs `CI=false npm run build`, which suppresses treat-warnings-as-errors, so warnings that would otherwise fail the build are discarded.",
+  "scorecard": {
+    "narrative": "The best security posture of the three web applications, largely because there is less of it and none of it renders raw HTML. Delivery discipline is the weakest area, as it is estate-wide.",
+    "dimensions": [
+      {
+        "id": "architecture",
+        "label": "Architecture Quality",
+        "current": 3,
+        "target": 4,
+        "keyGap": "Same conventions as its siblings — modules, store, shared components, single API client — applied to a much smaller surface. Held back by server state in Redux with no caching layer (PT5), and by consuming a contract 195 releases stale (PT2)."
+      },
+      {
+        "id": "security",
+        "label": "Security Posture",
+        "current": 2.5,
+        "target": 4,
+        "keyGap": "Bearer token in `localStorage` (PT1), and no Content Security Policy. Materially better than its siblings: zero HTML injection sinks, so there is no demonstrated path from injection to session theft within this application."
+      },
+      {
+        "id": "scalability",
+        "label": "Scalability Readiness",
+        "current": 2.5,
+        "target": 3.5,
+        "keyGap": "No caching or deduplication layer and no request cancellation anywhere (PT5). Lower impact than in the larger applications simply because there are fewer screens to refetch."
+      },
+      {
+        "id": "maintainability",
+        "label": "Code Maintainability",
+        "current": 1.5,
+        "target": 3.5,
+        "keyGap": "Zero test files — the only Novello repository with no tests whatsoever (PT3). Consumes a shared contract 195 releases behind (PT2), and the build suppresses warnings with `CI=false` (PT4)."
+      },
+      {
+        "id": "observability",
+        "label": "Observability & Monitoring",
+        "current": 1,
+        "target": 3.5,
+        "keyGap": "No error reporting service configured. The error boundary contains failures and reports them nowhere, so a client organisation hitting a crash produces no signal (PT6)."
+      },
+      {
+        "id": "devops",
+        "label": "DevOps Maturity",
+        "current": 2,
+        "target": 4,
+        "keyGap": "Build and deploy stages exist per environment, but the `test` stage runs Sonar only with `allow_failure: true`, and the build explicitly discards warnings (PT4)."
+      }
+    ]
+  },
+  "capabilities": [
+    {
+      "practice": "No credentials in source",
+      "status": "good",
+      "notes": "Swept clean."
+    },
+    {
+      "practice": "HTML output sanitised",
+      "status": "good",
+      "notes": "No `dangerouslySetInnerHTML` anywhere — the only front end in the estate where this holds."
+    },
+    {
+      "practice": "Error boundary",
+      "status": "partial",
+      "notes": "Present, but reports to no monitoring service (PT6)."
+    },
+    {
+      "practice": "Token in non-JavaScript-readable storage",
+      "status": "absent",
+      "notes": "`storageAccessToken` backed by `localStorage` (PT1)."
+    },
+    {
+      "practice": "Content Security Policy",
+      "status": "absent",
+      "notes": "No CSP meta tag in `public/index.html`."
+    },
+    {
+      "practice": "Automated tests",
+      "status": "absent",
+      "notes": "Zero test files (PT3)."
+    },
+    {
+      "practice": "CI runs tests",
+      "status": "absent",
+      "notes": "`test` stage is Sonar only with `allow_failure: true` (PT4)."
+    },
+    {
+      "practice": "Build fails on warnings",
+      "status": "absent",
+      "notes": "`CI=false npm run build` suppresses treat-warnings-as-errors (PT4)."
+    },
+    {
+      "practice": "Current shared contract",
+      "status": "absent",
+      "notes": "`^2.1.35` against a published 2.1.230 (PT2)."
+    },
+    {
+      "practice": "Current HTTP client",
+      "status": "good",
+      "notes": "axios 1.4 — ahead of the 0.26 in client-app and client-crm."
+    },
+    {
+      "practice": "Client error reporting",
+      "status": "absent",
+      "notes": "No Sentry or equivalent (PT6)."
+    }
+  ],
+  "systemModel": {
+    "purpose": "The portal through which Novello's client organisations — hospitals, care providers and their staffing managers — view bookings, sites, departments and the candidates supplied to them. The data is commercial and operational rather than the candidates' own records, though staffing detail about identifiable workers is visible.",
+    "actors": "Authenticated client-organisation users over the public internet · the Novello server API. Access is established through the encrypted access-link mechanism implemented server-side, after which a bearer token is held client-side. The realistic attacker is someone who obtains an access link or a stored token.",
+    "dataFlows": "Access link → server-side validation and decryption → bearer token persisted to `localStorage` → attached by the axios interceptor to every request → Novello server API.",
+    "invariants": [
+      {
+        "statement": "A session token cannot be read by injected script",
+        "status": "VIOLATED",
+        "findingId": "PT1",
+        "note": "Held in `localStorage`, though no injection sink exists in this application to exploit it."
+      },
+      {
+        "statement": "Server-supplied content is never rendered as executable markup",
+        "status": "HOLDS",
+        "note": "Verified — no `dangerouslySetInnerHTML` anywhere in the source tree."
+      },
+      {
+        "statement": "No credential reaches the browser bundle",
+        "status": "HOLDS"
+      },
+      {
+        "statement": "The application builds against the contract the backend serves",
+        "status": "VIOLATED",
+        "findingId": "PT2",
+        "note": "195 releases of declared drift."
+      },
+      {
+        "statement": "Every merge has passed the test suite",
+        "status": "VIOLATED",
+        "findingId": "PT3",
+        "note": "There is no test suite."
+      },
+      {
+        "statement": "A component failure does not blank the application",
+        "status": "HOLDS",
+        "note": "Error boundary present."
+      }
+    ]
+  },
+  "threatModel": "The asset is commercial and operational data belonging to Novello's client organisations, plus visibility of the staff supplied to them. Because the application renders no raw HTML, the stored-XSS path that dominates the other two web front ends does not apply. The residual risks are the token in `localStorage` — exploitable only via an injection this application does not currently provide, or via a dependency compromise — and the access-link mechanism itself, which is implemented server-side and assessed there. The most likely failure mode for this application is not an attack at all but a silent contract break arising from its 195-release dependency drift.",
+  "coverage": {
+    "method": "Manual static review of the `main` branch. Small enough that the full source tree was surveyed. No SAST, dependency audit or dynamic testing was run.",
+    "size": "≈4,380 lines across 130 TypeScript/TSX files, none of which are tests.",
+    "deepRead": [
+      "`src/libs/axios.ts` and `src/utils/storage/storageVariables.ts` — the session path",
+      "`.gitlab-ci.yml` — all stages, including the `CI=false` build invocation",
+      "`package.json` — dependency currency and shared contract declaration",
+      "`public/index.html` — CSP check"
+    ],
+    "grepSwept": [
+      "Credential patterns across the source tree — clean",
+      "`dangerouslySetInnerHTML` — zero occurrences, verified",
+      "`AbortController` and `CancelToken` — zero occurrences",
+      "Sentry and equivalent error reporting — absent"
+    ],
+    "notRead": [
+      "Feature-level business logic and Redux slices",
+      "The server-side access-link generation and validation this portal depends on — assessed in `novello-server`",
+      "Accessibility conformance and bundle size"
+    ],
+    "caveats": [
+      "Whether the 195-release contract drift has produced actual runtime breakage was not tested — PT2 is a latent risk based on declared versions, not an observed failure. Establishing the real impact requires compiling this application against the current shared package, which is the first step of its remediation.",
+      "This repository is on `main` while its siblings are on `beta`, so it may be at a different point in its release cycle; the branches were not compared.",
+      "No dependency vulnerability scan was run across roughly 67 direct dependencies."
+    ]
+  },
+  "findings": [
+    {
+      "id": "PT1",
+      "title": "Access token stored in localStorage",
+      "ruleId": "SEC-003",
+      "group": "Security",
+      "layer": "Frontend",
+      "dimension": "security",
+      "riskDimension": "Security",
+      "criticality": "High",
+      "priority": "P1",
+      "phase": 1,
+      "gate": "warning",
+      "confidence": "Confirmed",
+      "claim": "The bearer token is persisted to `localStorage`, where any script in the origin could read it.",
+      "evidence": [
+        {
+          "file": "src/utils/storage/storageVariables.ts",
+          "line": 3,
+          "snippet": "export const storageAccessToken = storageService('accessToken')",
+          "note": "Backed by `localStorage` in `storageService.ts:12-15`, identical to the CRM and candidate app."
+        },
+        {
+          "file": "src/libs/axios.ts",
+          "line": 12,
+          "note": "Read into the `Authorization` header on every request."
+        }
+      ],
+      "reasoning": "The same storage weakness as its siblings, but assessed one priority level lower here because this application contains no `dangerouslySetInnerHTML` and therefore provides no first-party injection path to exploit it. The residual exposure is via a compromised dependency rather than application content.",
+      "impact": "Reduces account-takeover risk by keeping session tokens out of JavaScript-readable storage and limiting the blast radius of any cross-site scripting flaw.",
+      "refutation": "Checked for injection sinks that would make this immediately exploitable — there are none, which is the reason for the de-escalation from P0. Also checked for a CSP that would mitigate a dependency-borne injection; none is set, so the exposure is reduced rather than removed.",
+      "remediation": "Fix as part of the single cross-front-end session change rather than independently — the backend work is shared, and doing it once covers all four applications.",
+      "effortDays": 2,
+      "role": "Frontend Engineer",
+      "rationale": "De-escalated from P0 to P1 relative to the equivalent finding in client-app and client-crm: the storage weakness is identical, but this application has no injection sink, so there is no demonstrated path from content to session theft."
+    },
+    {
+      "id": "PT2",
+      "title": "Shared contract 195 releases behind the published package",
+      "ruleId": "DEP-005",
+      "group": "Delivery",
+      "layer": "Frontend",
+      "dimension": "architecture",
+      "riskDimension": "Maintainability",
+      "criticality": "High",
+      "priority": "P1",
+      "phase": 2,
+      "confidence": "Confirmed",
+      "claim": "The portal declares `@appollo79/shared` at `^2.1.35` while the package is published at 2.1.230 — the widest contract drift in the estate.",
+      "evidence": [
+        {
+          "file": "package.json",
+          "line": 6,
+          "snippet": "\"@appollo79/shared\": \"^2.1.35\",",
+          "note": "Sibling applications declare ^2.1.226; the package is at 2.1.230."
+        }
+      ],
+      "reasoning": "The types this application was authored against describe an API contract that is 195 releases old. Because the caret range resolves forward, an install may pull a current version and mask the gap at build time while the code still assumes the old shapes — or a committed lockfile may pin it to the old one, in which case the compiler is validating against a contract the backend no longer serves. Either way this is the most likely place in the estate for a silent runtime contract failure.",
+      "impact": "Aligns the portal on the contract the backend actually serves, converting latent runtime drift into build-time errors.",
+      "refutation": "Considered whether the caret range makes this harmless because npm would resolve forward regardless — not fully: the declared floor is the honest signal of what the code was written against, and a committed lockfile pins the resolved version independently of the range.",
+      "remediation": "Treat this as a small migration rather than a version bump. Compile against the current shared package first to establish the real breakage surface, fix the type errors, then pin and keep it current alongside the other consumers. See `novello-shared` finding S2.",
+      "effortDays": 4,
+      "role": "Frontend Engineer"
+    },
+    {
+      "id": "PT3",
+      "title": "No tests of any kind",
+      "ruleId": "TST-001",
+      "group": "Delivery",
+      "layer": "Frontend",
+      "dimension": "maintainability",
+      "riskDimension": "Maintainability",
+      "criticality": "High",
+      "priority": "P1",
+      "phase": 2,
+      "confidence": "Confirmed",
+      "claim": "The repository contains no test files at all — the only Novello repository with a complete absence rather than token coverage.",
+      "evidence": [
+        {
+          "file": "src/",
+          "note": "Zero `*.test.*` or `*.spec.*` files across 130 source files."
+        }
+      ],
+      "reasoning": "Most consequential here in combination with PT2: the contract migration this application needs is exactly the kind of change a test suite would make safe, and there is none to lean on.",
+      "impact": "Enables safe refactoring and faster delivery by catching regressions automatically instead of relying on manual verification.",
+      "remediation": "Add tests to the screens affected by the PT2 contract migration as that work proceeds, rather than as a separate exercise. At 130 files a meaningful baseline is achievable in days rather than weeks.",
+      "effortDays": 4,
+      "role": "Frontend Engineer"
+    },
+    {
+      "id": "PT4",
+      "title": "Pipeline cannot fail and the build discards warnings",
+      "ruleId": "DVO-002",
+      "group": "Delivery",
+      "layer": "Infrastructure",
+      "dimension": "devops",
+      "riskDimension": "Reliability",
+      "criticality": "High",
+      "priority": "P1",
+      "phase": 1,
+      "confidence": "Confirmed",
+      "claim": "The `test` stage runs Sonar only with `allow_failure: true`, and the build step invokes `CI=false npm run build`, which disables the build tool's treat-warnings-as-errors behaviour.",
+      "evidence": [
+        {
+          "file": ".gitlab-ci.yml",
+          "line": 9,
+          "note": "`sonar_test` is the only `test`-stage job; `allow_failure: true` on line 27."
+        },
+        {
+          "file": ".gitlab-ci.yml",
+          "line": 40,
+          "snippet": "- CI=false npm run build",
+          "note": "`CI=false` suppresses the warnings-as-errors behaviour that would otherwise fail the build in a CI environment."
+        }
+      ],
+      "reasoning": "The `CI=false` flag is the notable part and is specific to this repository. It is typically added to get an initially failing build to pass, and it permanently discards a signal — unused variables, missing effect dependencies, accessibility warnings — that the build tool was reporting. Combined with an advisory-only Sonar job and no tests, nothing in this pipeline can fail.",
+      "impact": "Makes the pipeline's green status meaningful by restoring the build's own warnings and adding the tests, lint and dependency checks that currently do not run.",
+      "refutation": "Checked whether `CI=false` is set for an unrelated reason such as a known upstream warning — no comment or documentation explains it, and no other Novello repository does this. Survives.",
+      "remediation": "Remove `CI=false`, fix or explicitly suppress the warnings it was hiding, then add the shared pipeline template: dependency audit, lint, tests, with `allow_failure` removed.",
+      "effortDays": 2,
+      "role": "DevOps Engineer"
+    },
+    {
+      "id": "PT5",
+      "title": "No caching data layer or request cancellation",
+      "ruleId": "FE-001",
+      "group": "Frontend Quality",
+      "layer": "Frontend",
+      "dimension": "scalability",
+      "riskDimension": "Performance",
+      "criticality": "Medium",
+      "priority": "P2",
+      "phase": 2,
+      "confidence": "Confirmed",
+      "claim": "Server state is fetched into Redux with hand-written flags, with no caching, deduplication or cancellation anywhere.",
+      "evidence": [
+        {
+          "file": "package.json",
+          "note": "No React Query, SWR or RTK Query, despite Redux Toolkit being installed."
+        },
+        {
+          "file": "src/",
+          "note": "Zero `AbortController` or `CancelToken` occurrences."
+        }
+      ],
+      "reasoning": "The same pattern as its siblings, but with materially lower impact: at 130 files there are few screens and little navigation, so redundant refetching costs less. Prioritised accordingly.",
+      "impact": "Using a caching query layer, the same query key resolves to one cached result — zero duplicate network requests, across components and across page navigations.",
+      "remediation": "Adopt RTK Query, already available in the installed Redux Toolkit. Given the size, this is a contained change and is best done alongside the PT2 contract migration since both touch the same API call sites.",
+      "effortDays": 3,
+      "role": "Frontend Engineer"
+    },
+    {
+      "id": "PT6",
+      "title": "No client error reporting",
+      "ruleId": "OBS-004",
+      "group": "Delivery",
+      "layer": "Frontend",
+      "dimension": "observability",
+      "riskDimension": "Reliability",
+      "criticality": "Medium",
+      "priority": "P2",
+      "phase": 3,
+      "confidence": "Confirmed",
+      "claim": "No error-reporting service is configured, and the error boundary that catches render failures reports them nowhere.",
+      "evidence": [
+        {
+          "file": "package.json",
+          "note": "No Sentry or equivalent, despite the backend having Sentry wired up."
+        },
+        {
+          "file": "src/",
+          "note": "An error boundary is present but has no reporting integration."
+        }
+      ],
+      "reasoning": "Client organisations are external users who will not raise engineering tickets — they will contact an account manager or simply stop using a broken screen. Without reporting, that failure never reaches the engineering team.",
+      "impact": "Surfaces production failures the moment they occur rather than when a customer reports them, sharply reducing time to detection.",
+      "remediation": "Wire the existing error boundary to an error-reporting service. Under a day, and shared with the equivalent work in the other three front ends.",
+      "effortDays": 1,
+      "role": "Frontend Engineer"
+    }
+  ],
+  "refutedCandidates": [
+    {
+      "claim": "The portal shares the stored-XSS injection path found in client-app and client-crm.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "Zero `dangerouslySetInnerHTML` occurrences across the entire source tree. This is the single reason this application is not blocked from production while its two siblings are, and it is why the token-storage finding is P1 here rather than P0."
+    },
+    {
+      "claim": "The credential pattern from the `server` repository has spread here.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "Swept for AWS, SendGrid, Google, MongoDB and private-key patterns — clean."
+    },
+    {
+      "claim": "The portal is on an outdated HTTP client like its siblings.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "axios 1.4 and TypeScript 4.9, both ahead of client-app and client-crm. This is the most current of the three CRA applications."
+    }
+  ],
+  "positivePosture": [
+    {
+      "title": "No raw HTML rendering",
+      "detail": "Zero `dangerouslySetInnerHTML` sites — the only Novello front end where this holds. It removes an entire class of finding and is the reason this application is not production-blocked."
+    },
+    {
+      "title": "Most current dependency line of the three web apps",
+      "detail": "axios 1.4 and TypeScript 4.9, against 0.26 and 4.6 in the siblings. Whatever upgrade discipline produced this is worth applying to the others."
+    },
+    {
+      "title": "Proportionate scope",
+      "detail": "At 4,380 lines the application does what it needs to and no more. Its low finding count is a genuine property of a small, focused codebase rather than an artefact of shallow review."
+    },
+    {
+      "title": "Error boundary present",
+      "detail": "Failures degrade gracefully rather than blanking the portal for a client organisation mid-task."
+    }
+  ],
+  "inventory": [
+    {
+      "item": "Source",
+      "value": "≈4,380 lines across 130 TypeScript/TSX files"
+    },
+    {
+      "item": "Test files",
+      "value": "0"
+    },
+    {
+      "item": "Direct dependencies",
+      "value": "≈67, none audited"
+    },
+    {
+      "item": "HTML injection sinks",
+      "value": "0"
+    },
+    {
+      "item": "Request cancellation usages",
+      "value": "0"
+    },
+    {
+      "item": "Shared contract version",
+      "value": "^2.1.35 (published: 2.1.230)"
+    },
+    {
+      "item": "Client error reporting",
+      "value": "None"
+    }
+  ],
+  "releaseGates": [
+    {
+      "gate": "Cross-site scripting sink",
+      "note": "none found — zero raw HTML rendering",
+      "devTest": "Clear",
+      "prod": "Clear",
+      "status": "Pass"
+    },
+    {
+      "gate": "Secrets in version control",
+      "note": "none found — swept clean",
+      "devTest": "Clear",
+      "prod": "Clear",
+      "status": "Pass"
+    },
+    {
+      "gate": "Session token exposure",
+      "findingRefs": [
+        "PT1"
+      ],
+      "devTest": "Warning",
+      "prod": "Warning",
+      "status": "Open"
+    },
+    {
+      "gate": "Contract compatibility with backend",
+      "findingRefs": [
+        "PT2"
+      ],
+      "devTest": "Warning",
+      "prod": "Warning",
+      "status": "Needs-runtime-check"
+    },
+    {
+      "gate": "Tests run before merge",
+      "findingRefs": [
+        "PT3",
+        "PT4"
+      ],
+      "devTest": "Warning",
+      "prod": "Warning",
+      "status": "Open"
+    },
+    {
+      "gate": "Build fails on warnings",
+      "findingRefs": [
+        "PT4"
+      ],
+      "devTest": "Warning",
+      "prod": "Warning",
+      "status": "Open"
+    }
+  ],
+  "phases": [
+    {
+      "number": 1,
+      "name": "Stabilisation & Risk Mitigation",
+      "objective": "Restore the pipeline's ability to fail, and align session handling with the estate-wide fix."
+    },
+    {
+      "number": 2,
+      "name": "Architecture & Scalability",
+      "objective": "Close the contract drift and build the test coverage that makes it safe to do so."
+    },
+    {
+      "number": 3,
+      "name": "Optimisation & Governance",
+      "objective": "Make production failures visible."
+    }
+  ],
+  "suggestions": [
+    {
+      "suggestion": "Use this repository as the template for the others",
+      "description": "It has no raw HTML rendering and the most current dependency line of the three web applications. Whatever produced that is worth identifying and applying to client-app and client-crm.",
+      "impact": "Turns an existing internal success into a pattern rather than an accident."
+    },
+    {
+      "suggestion": "Do the contract migration and the test work together",
+      "description": "PT2 needs a safety net and PT3 needs a reason to exist. Writing tests for the screens the migration touches serves both.",
+      "impact": "Two findings resolved by one piece of work, with the tests targeted where they demonstrably matter."
+    },
+    {
+      "suggestion": "Remove `CI=false` before adding any other pipeline gate",
+      "description": "There is little point adding lint and test jobs while the build itself is configured to discard the warnings it already produces.",
+      "impact": "Recovers an existing quality signal at no cost before investing in new ones."
+    }
+  ],
+  "architecturalNarrative": "Nothing here needs restructuring. The recommendations concern this application's relationship with the shared contract and with the estate-wide session pattern.",
+  "architecturalRecommendations": [
+    {
+      "aspect": "Shared contract",
+      "current": "Declared at ^2.1.35 against a published 2.1.230.",
+      "recommended": "Aligned with the other consumers on the current version.",
+      "recommendation": "PT2 — compile against current first to size the real breakage, then treat as a small migration."
+    },
+    {
+      "aspect": "Session handling",
+      "current": "Bearer token in `localStorage`.",
+      "recommended": "`HttpOnly; Secure; SameSite` cookie from the backend.",
+      "recommendation": "PT1 — adopt the shared cross-front-end change rather than solving locally."
+    },
+    {
+      "aspect": "Build signal",
+      "current": "`CI=false` discards build warnings; Sonar is advisory only.",
+      "recommended": "Warnings restored, plus lint, tests and dependency audit as required checks.",
+      "recommendation": "PT4 — remove `CI=false` first, since it recovers a signal that already exists."
+    }
+  ],
+  "lookingAhead": "The client portal is the healthiest of the three web applications and the only one not blocked from production. That is worth stating plainly: it renders no raw HTML, carries the most current dependency line of the three, and is small enough that its remaining work is measured in days.\n\nThe one finding that deserves attention beyond the shared estate-wide items is the 195-release contract drift. It is not causing a visible failure today, but it is the single most likely source of a silent runtime break in the estate, and the absence of any test suite means there is nothing to catch it when it comes. Closing that gap — and writing tests for the screens it touches while doing so — is the highest-value work available in this repository.",
+  "gaps": [
+    {
+      "capability": "Content Security Policy",
+      "area": "Security",
+      "status": "missing",
+      "why": "No CSP. Lower urgency than the siblings because there are no injection sinks here, but it remains the main defence against a dependency-borne script compromise.",
+      "recommendation": "Deploy a CSP in report-only mode, then enforce. Cheapest of the three to roll out given the small surface.",
+      "priority": "P2",
+      "phase": 2,
+      "effortDays": 1,
+      "role": "Frontend Engineer",
+      "layer": "Frontend"
+    },
+    {
+      "capability": "Client error monitoring",
+      "area": "Observability",
+      "status": "missing",
+      "why": "Client organisations are external commercial users who will contact an account manager, not raise a ticket. Without reporting, a broken screen reaches the business as a relationship problem rather than a bug.",
+      "recommendation": "Add Sentry wired to the existing error boundary, with source-map upload in the build.",
+      "priority": "P2",
+      "phase": 3,
+      "effortDays": 1,
+      "role": "Frontend Engineer",
+      "layer": "Frontend"
+    }
+  ]
+}

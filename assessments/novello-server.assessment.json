@@ -1,0 +1,806 @@
+{
+  "meta": {
+    "app": "novello-server",
+    "productName": "Novello Server API",
+    "client": "Novello Healthcare",
+    "org": "Novello",
+    "repository": "gitlab.com/appollo79/server",
+    "repoPath": "D:/repos/novello/server",
+    "branch": "Alpha/0.0.0.2",
+    "commit": "6318f445",
+    "version": "3.9.0",
+    "stack": "NestJS 10 / TypeScript · MongoDB (Mongoose) · Redis · Elasticsearch · Bull queues · Socket.io · CASL · AWS S3 / ECS · SendGrid · Firebase · WhatsApp Cloud API · Azure Document Intelligence · OpenAI · Sentry · GitLab CI / Docker",
+    "reviewDate": "2026-10-30",
+    "assessmentType": "Technical Landscape Assessment & Recommendations Report — Refresh",
+    "documentStatus": "CONFIDENTIAL",
+    "scope": "Refresh of the 2026-07-28 assessment, re-reviewing the Novello server API at branch `Alpha/0.0.0.2` (commit 6318f445) after 151 commits and +23,489/−1,540 lines across 459 files. Every one of the thirteen baseline findings was re-verified against current code and is recorded here as fixed, surviving or downgraded; the eight baseline capability gaps were likewise re-checked rather than carried forward. New surface reviewed: the `whatsapp`, `whatsapp-inbox`, `crm-permissions`, `invoices`, `reports`, `shifts`, `umbrellas`, `support`, `candidates-payment-history` and `ai-timesheet-review-item` modules, the internal Lambda machine-to-machine boundary, and the authorisation decorators across all 63 controllers. The test suite was executed. The sibling repositories (client-app, client-crm, client-portal, novello-mobile, shared) are assessed separately; `server-hotfix/`, `redis/` and `timesheet-ai-lambda/` in the same workspace were not reviewed, though the first two are recorded as findings here. No SAST, dependency-vulnerability scan or dynamic testing was performed."
+  },
+
+  "verdict": {
+    "prod": "BLOCK_RELEASE",
+    "devTest": "APPROVE_WITH_CONDITIONS",
+    "summary": "Production release remains blocked, but for a materially different reason than in July. The two P0s that dominated the last report — nineteen live credentials committed as environment-schema defaults, and a JWT secret pinned to a published literal — have both been properly fixed: the schema now requires every credential and carries no literal defaults. What blocks release now is authorisation. Any authenticated token, including a candidate's own, can read any other candidate's record and compliance history with a caller-chosen MongoDB projection; the candidate-declaration endpoints remain completely unauthenticated and writable; and the `.env` file is still copied into the production container image. Alongside those, a granular CRM permission system was built this cycle and is enforced nowhere on the server. The engineering trend is genuinely upward — 38 test specs where there were 7, an exemplary WhatsApp webhook signature guard, a dedicated migration stage — but the authorisation boundary has not kept pace with the surface being added behind it.",
+    "blockers": [
+      { "text": "Scope candidate reads to the requesting user: `GET /v1/candidates/:id`, `:id/compliance` and `/bulk` are role-unrestricted and perform no ownership check.", "findingId": "F1" },
+      { "text": "Put the candidate-declaration and declaration endpoints behind `@Auth(...)`; both are unauthenticated today and both accept writes.", "findingId": "F2" },
+      { "text": "Stop copying `.env` into the production image and source secrets from Secrets Manager or SSM instead.", "findingId": "F3" },
+      { "text": "Enforce the CRM permission model server-side, or stop presenting it as an access control.", "findingId": "F4" }
+    ]
+  },
+
+  "objective": {
+    "narrative": "To re-establish the state of the Novello server API three months after the initial assessment, verifying which of the original findings have been closed and reviewing the substantial new surface added since. The engagement re-tested every baseline finding against current code, re-checked every claimed capability gap, executed the test suite, and reviewed the authorisation posture across all 63 controllers — the area where the new feature work has outrun the controls around it. Findings are stated only where the path from an entry point to the concrete failure was traced in the current source.",
+    "metrics": [
+      { "value": "151", "label": "Commits Since Review", "detail": "+23,489 / −1,540 lines across 459 files" },
+      { "value": "15", "label": "Findings", "detail": "P0=3  P1=7  P2=5" },
+      { "value": "2 of 13", "label": "Baseline Findings Fixed", "detail": "both original P0 credential findings closed" },
+      { "value": "62.5", "label": "Est. Total Effort", "detail": "Man-days across all three phases" }
+    ]
+  },
+
+  "executiveSummary": "Three months and 151 commits after the first review, this codebase has moved in two directions at once. The credential exposure that dominated the July report is gone: `env.ts` has been rewritten so that every secret is `Joi.string().required()` with no literal default, the commented-out validators beside them have been restored, and a search of the file's history for the committed AWS key prefix returns nothing. That closes both original P0s and removes the single worst exposure in the platform. The team also added a WhatsApp webhook signature guard that is the best-written security code in the repository — HMAC-SHA256 over the exact raw bytes, failing closed on a missing secret, length-checked before a constant-time compare — plus a dedicated container stage for migrations, separate staging and test task definitions, and a test suite that has grown from 7 spec files to 38.\n\nAgainst that, the authorisation boundary has not kept up with the surface being built behind it. The server now has 63 controllers; 52 use the project's `@Auth(...)` decorator, which is good discipline. But 65 individual endpoint declarations call it with no role at all, and the guard's own documentation notes that `@Auth()` without parameters \"gives access to all roles\". The consequence is concrete and was traced end to end: `GET /v1/candidates/:id` is role-unrestricted, its handler passes straight through to `super.findById(id, projection)` with no ownership check, and the projection is built from a caller-supplied query parameter. Any authenticated token — including one issued to a candidate by the mobile app — can therefore read any other candidate's document, field by field of the caller's choosing, along with their compliance record. In a healthcare staffing platform those records hold right-to-work status, DBS checks and health declarations.\n\nTwo further authorisation problems sit beside it. The candidate-declaration endpoints flagged in July are unchanged and still entirely unauthenticated, and the related `declarations` controller is worse than first recorded — it exposes `POST`, `GET`, `GET :id` and `PATCH :id` with no guard, so declarations can be created and altered anonymously. Separately, a `crm-permissions` module was built this cycle with a full `CheckCrmPermission` use-case, page registry and per-user grants; that use-case is called from nowhere outside its own module. The permissions are therefore advisory — the CRM hides pages a user lacks, and the API serves them anyway.\n\nThe delivery picture is largely unchanged. `.env` is still copied into the production image at `Dockerfile:33` and `.dockerignore` still does not exclude it. The pipeline gained a Sonar scan, but it runs `allow_failure: true` on merge requests to `main` only, and still executes no tests, no lint and no dependency audit — which matters more now that tests exist, because the suite is red: 26 of 343 tests fail across 3 suites. None of the eight capability gaps from July has been closed; the seven ECS task definitions still carry no `taskRoleArn`, no `secrets`/`valueFrom` block and no `healthCheck`, and there is still no infrastructure-as-code anywhere in the repository. Total remediation is 62.5 man-days, of which Phase 1 is 16.5 and closes every blocker.",
+
+  "scorecard": {
+    "targetLabel": "target 3.8 avg",
+    "narrative": "Security moves up half a point rather than more: closing two P0 credential findings is significant, but three P0s remain and all of them are authorisation. Applying the maturity model literally gives 1.25 — three P0s at −0.5 and three security P1s at −0.25 against a 3.0 start, with +0.5 for verifiably deliberate practice in the env-schema rewrite and the two new guards. Maintainability and DevOps each gain half a point for the test suite and the migration/environment work respectively, both capped by the fact that nothing enforces either in the pipeline. Architecture, scalability, observability and data are unchanged: the new modules follow the existing structure faithfully, and none of the findings in those dimensions was addressed.",
+    "dimensions": [
+      { "id": "architecture", "label": "Architecture Quality", "current": 3.5, "target": 4.0, "maturity": "Defined", "keyGap": "The new modules follow the established domain/infrastructure/use-case layering faithfully, but authorisation is expressed inconsistently above it: 65 endpoint declarations use role-unrestricted `@Auth()` (F5) and the `crm-permissions` model built this cycle has no server-side enforcement point (F4)." },
+      { "id": "security", "label": "Security Posture", "current": 1.5, "target": 4.0, "maturity": "Initial", "keyGap": "Both original credential P0s are fixed, but three P0s remain: any authenticated user can read any candidate and their compliance record (F1), the declaration endpoints are unauthenticated and writable (F2), and `.env` ships inside the production image (F3). The SendGrid webhook is still unauthenticated (F6) and no automated gate would catch any of it." },
+      { "id": "scalability", "label": "Scalability Readiness", "current": 3.0, "target": 3.5, "maturity": "Defined", "keyGap": "Unchanged since July: no graceful shutdown, so in-flight requests and Bull jobs are dropped on every ECS task replacement (F8), and no load or capacity testing exists to establish known limits (G8)." },
+      { "id": "maintainability", "label": "Code Maintainability", "current": 2.5, "target": 3.5, "maturity": "Developing", "keyGap": "Test specs grew from 7 to 38 and the new modules are well covered, but the suite is red — 26 of 343 tests fail — nothing runs it in CI, and the legacy surface remains uncovered (F10). Temporary and debug artefacts are still committed at the repository root (F15)." },
+      { "id": "observability", "label": "Observability & Monitoring", "current": 3.0, "target": 3.5, "maturity": "Defined", "keyGap": "Sentry is wired and structured logging is in place, but one unconstrained environment variable still gates Sentry, Swagger and clustering together (F9), and there is still no APM or distributed tracing (G6)." },
+      { "id": "devops", "label": "DevOps Maturity", "current": 2.5, "target": 4.0, "maturity": "Developing", "keyGap": "Migrations now have a dedicated container stage and a `prod-migrate` task definition, and staging/test environments exist — but `.env` is still baked into the image (F3), the pipeline runs no test, lint or audit gate (F7), and there is no IaC, no task IAM role and no Secrets Manager integration (G1, G2, G5)." },
+      { "id": "data", "label": "Data Integrity & DB Health", "current": 2.5, "target": 4.0, "maturity": "Developing", "keyGap": "Unchanged since July: the secondary read preference intended for worker threads is silently discarded because the result of `String.concat` is never assigned (F12), so every worker reads from the primary." }
+    ]
+  },
+
+  "systemModel": {
+    "purpose": "The central API for a healthcare staffing platform. It holds candidate records (personal details, right-to-work and DBS compliance, health declarations, skills, availability), client organisations with their headquarters, sites and departments, shifts and shift offers, timesheets with AI-assisted OCR review, payment history, umbrella-company arrangements, invoices and reporting. It serves four separate front ends — a CRM for internal staff, a client portal, a candidate mobile app and a candidate web app — plus machine-to-machine traffic from a timesheet-analysis Lambda and inbound webhooks from SendGrid and the WhatsApp Cloud API. The data is regulated: compliance records and health declarations are the evidence that a placed worker is legally and medically cleared to work a shift.",
+    "actors": "Anonymous callers reach the unauthenticated controllers — blog posts, postcode lookup, mobile config, reference data, SMS verification, and (contrary to intent) the two declaration controllers. `CRM_ADMIN` tokens reach the internal staff surface, which is most of the API. `CANDIDATE` tokens are issued to the mobile and web candidate apps. Client-portal users authenticate through a separate `ClientPortalGuard`. The timesheet-analysis Lambda authenticates machine-to-machine with a shared `x-internal-api-key`. SendGrid and WhatsApp post to webhook endpoints. The realistic attacker is a candidate: registration is open to anyone the agency onboards, the mobile app hands them a `CANDIDATE` JWT, and that token is all F1 requires to read every other candidate's compliance file.",
+    "dataFlows": "Request → ECS/ALB → `main.ts` (helmet, compression, body parser preserving `rawBody` for webhook signature checks, permissive CORS, `trust proxy`) → global `ThrottlerBehindProxyGuard` → route-level `@Auth(...roles)` applying `RolesGuard`, which extends `JwtAuthGuard` → controller → `UseCaseProxy` → use case → repository → Mongoose/MongoDB, with Redis for cache and Bull queues and Elasticsearch for search. The authentication path issues a JWT whose `role` claim is the sole input to `RolesGuard`; there is no per-resource authorisation step between the guard and the repository. The machine-to-machine path is separate: this server calls the analysis Lambda with `x-internal-api-key`, and the Lambda calls back to `POST /time-sheets/internal/reanalysis-result` and `POST /ai-timesheet-review-items/internal/analysis-result`, both guarded by `InternalApiKeyGuard`. Inbound WhatsApp messages are verified by HMAC-SHA256 over the raw body before reaching `whatsapp-inbox`.",
+    "invariants": [
+      { "statement": "A candidate can read only their own record, compliance file and declarations.", "status": "VIOLATED", "findingId": "F1", "note": "`GET /v1/candidates/:id` is role-unrestricted and its handler calls `super.findById(id, projection)` with no ownership check, so any authenticated token reads any candidate." },
+      { "statement": "Every endpoint handling candidate or client data requires authentication.", "status": "VIOLATED", "findingId": "F2", "note": "Nine of 63 controllers have no guard. Seven are legitimately public; the two declaration controllers are not, and both accept writes." },
+      { "statement": "An endpoint is reachable only by the roles its function requires.", "status": "VIOLATED", "findingId": "F5", "note": "65 endpoint declarations use `@Auth()` with no role, which `RolesGuard` treats as all roles permitted." },
+      { "statement": "The CRM permission a user has been granted determines what the API will serve them.", "status": "VIOLATED", "findingId": "F4", "note": "`CheckCrmPermissionUseCase` exists and is called from nowhere outside the `crm-permissions` module; enforcement is entirely front-end." },
+      { "statement": "No credential is present in the deployed artefact.", "status": "VIOLATED", "findingId": "F3", "note": "`Dockerfile:33` copies `.env` into the runtime stage and `.dockerignore` does not exclude it. The source-level exposure that was the July P0 is fixed." },
+      { "statement": "No credential is readable by anyone with repository access.", "status": "HOLDS", "note": "Verified fixed since July: every secret in `env.ts` is now `Joi.string().required()` with no literal default, no commented-out validators remain, and a pickaxe search of the file's history for the committed AWS key prefix returns no commits." },
+      { "statement": "An inbound webhook is processed only when its payload is provably from the stated sender.", "status": "VIOLATED", "findingId": "F6", "note": "Half-holds: the WhatsApp webhook verifies an HMAC-SHA256 signature over the raw bytes and fails closed, but `POST /v1/webhooks/sendgrid` has no guard and takes `@Body() body: any`." },
+      { "statement": "Machine-to-machine callers are authenticated with a secret compared in constant time.", "status": "VIOLATED", "findingId": "F13", "note": "`InternalApiKeyGuard` fails closed correctly but compares with `!==`, where the sibling WhatsApp guard uses `timingSafeEqual`." },
+      { "statement": "A task replacement completes in-flight requests and queue jobs before exiting.", "status": "VIOLATED", "findingId": "F8", "note": "No `enableShutdownHooks`, no SIGTERM handler in `main.ts`, and no Bull or Mongo teardown." },
+      { "statement": "Worker threads read from a secondary replica as designed.", "status": "VIOLATED", "findingId": "F12", "note": "`uri.concat('/?readPreference=secondary')` discards its result, so the option never reaches the connection string." },
+      { "statement": "No request path reaches MongoDB with an unvalidated user-controlled operator.", "status": "CHECK", "note": "Every DTO reviewed is `class-validator`-decorated and the repositories build filters structurally rather than from raw request objects. The caller-controlled projection in F1 is a field-selection channel rather than an operator-injection one. Not exhaustively audited across all 63 controllers — see coverage caveats." },
+      { "statement": "A change cannot reach production without the test suite passing.", "status": "VIOLATED", "findingId": "F7", "note": "The pipeline runs no test job at all, and the suite would not pass if it did: 26 of 343 tests fail across 3 suites." },
+      { "statement": "Every deployed environment is described by committed, reviewable configuration.", "status": "CHECK", "findingId": "F3", "note": "Seven ECS task definitions are committed, including staging, test and a dedicated `prod-migrate` — an improvement. But none carries a `taskRoleArn`, `secrets` block or `healthCheck`, and the surrounding platform has no IaC at all." },
+      { "statement": "Production runs only code that is under version control.", "status": "VIOLATED", "findingId": "F14", "note": "A `server-hotfix/` copy of this application at the same version sits beside the repository with no `.git` directory — 1,793 files of unversioned parallel working copy." }
+    ]
+  },
+
+  "threatModel": "The attacker to design against is a candidate with a valid mobile-app token, because that is the lowest-privilege credential the platform issues and it is enough for the worst finding. F1 gives them any other candidate's record and compliance file with a projection of their choosing — names, contact details, right-to-work and DBS status, health declarations. F5 is the mechanism: 65 endpoint declarations accept any authenticated role, so the candidate token is accepted wherever a CRM token would be. A second, anonymous attacker needs no credential at all: F2 lets them list, read, create and modify candidate declarations, which are the regulatory attestations behind a placement, and F6 lets them post arbitrary unvalidated payloads to the SendGrid webhook. A third actor worth naming is a CRM user whose page permissions have been deliberately restricted: F4 means those restrictions exist only in the front end, so the same user can still call every endpoint directly. Finally, anyone who obtains the production image obtains `.env` with it (F3) — and the credentials inside it are the live ones the July fix stopped committing to source.",
+
+  "coverage": {
+    "method": "Refresh review. Baseline-differential rather than cold: the thirteen findings and eight capability gaps from the 2026-07-28 assessment were each re-tested against the current tree and recorded as fixed, surviving or downgraded, and the 459 changed files were then reviewed for new defects. Read in execution order — `main.ts` → global guards → `@Auth`/`RolesGuard` → controller → use case → service → repository. Sibling comparison across the three security guards and across guarded versus unguarded controllers did most of the work. The test suite was executed (`npx jest --ci`, 250s). No SAST, dependency-vulnerability scan or dynamic testing was run.",
+    "size": "151 commits since the baseline commit d45c065, +23,489/−1,540 lines across 459 files, measured with `git diff --stat` against the last commit on or before 2026-07-29 excluding `package-lock.json`. The application now has 63 controllers, 17 new or substantially changed modules, 67 source modules in total, 38 test specs and 7 ECS task definitions.",
+    "deepRead": [
+      "src/modules/common/configs/env.ts — in full, against the baseline version (F1/F2 verification)",
+      "src/main.ts — bootstrap, middleware order, CORS, rawBody capture, clustering and shutdown",
+      "src/modules/common/decorators/auth.ts and src/modules/common/guards/roles.guard.ts — the authorisation mechanism",
+      "src/modules/common/guards/whatsapp-webhook-signature.guard.ts — in full",
+      "src/modules/common/guards/internal-api-key.guard.ts — in full",
+      "src/modules/candidates/candidates.controller.ts — every route's decorator and the handlers for `:id`, `:id/compliance` and `/bulk`",
+      "src/modules/candidates/candidates.service.ts — findById and getCompliance",
+      "src/modules/candidates-declarations/infrastructure/routes/candidates-declaration.controller.ts and its update DTO — in full",
+      "src/modules/declarations/infrastructure/routes/declarations.controller.ts — route inventory",
+      "src/modules/webhooks/webhooks.controller.ts — in full",
+      "src/modules/crm-permissions/ — use-case, repository and error surface; enforcement call-site search across the whole tree",
+      "src/modules/database/database.module.ts — read preference and connection handling",
+      "Dockerfile, .dockerignore, .gitlab-ci.yml, package.json scripts",
+      "aws/*.task-definition.json — all seven, for taskRoleArn, secrets and healthCheck"
+    ],
+    "grepSwept": [
+      "`@Auth(` and `UseGuards` across all 63 controllers — the guarded/unguarded split and the bare-`@Auth()` count",
+      "`CheckCrmPermission` / `checkCrmPermission` across the whole tree, excluding its own module — zero enforcement sites",
+      "`APP_GUARD` / `useGlobalGuards` — only the throttler is global",
+      "`env(` equivalents: `configService.get` for every new optional secret (WHATSAPP_APP_SECRET, INTERNAL_LAMBDA_API_KEY, AZURE_DOC_INTEL_KEY, OPENAI_API_KEY)",
+      "`createHmac` / `timingSafeEqual` — two guards, one constant-time and one not",
+      "`.default(` and `required()` in env.ts, plus a `-S\"AKIA\"` pickaxe over that file's history",
+      "`*.spec.ts` count at HEAD versus at the baseline commit (38 versus 7)",
+      "`readPreference` / `isMainThread` in the database module",
+      "`enableShutdownHooks` / SIGTERM / SIGINT across src/",
+      "IaC markers (`*.tf`, `*.bicep`, `serverless.yml`, `template.yaml`, `cdk.json`) and APM packages in package.json"
+    ],
+    "notRead": [
+      "`node_modules/` — dependency internals were not audited",
+      "The `mobile/`-equivalent siblings: client-app, client-crm, client-portal, novello-mobile and shared are assessed in their own reports",
+      "`server-hotfix/` — the unversioned parallel copy is recorded as F14 but its 1,793 files were not diffed against this repository, so what it contains that this repo does not is unknown",
+      "`timesheet-ai-lambda/` and `redis/` in the same workspace — out of scope for this report",
+      "The `whatsapp-inbox` message-routing internals (topic-routing.ts, mi-stats.ts) — reviewed for authorisation and read at the interface level, not line by line; they carry their own tests",
+      "`reports/`, `invoices/` and `umbrellas/` business logic — authorisation verified, calculation correctness not assessed",
+      "The 26 failing tests were counted and one failing spec identified by name; the individual failures were not diagnosed",
+      "The live database, Elasticsearch and Redis instances — no schema, index statistics or query plans were available"
+    ],
+    "caveats": [
+      "F1's blast radius depends on how discoverable candidate ObjectIds are to a candidate token. They are not sequential, but they appear in shift, offer and message payloads the candidate app legitimately receives, so treat them as known rather than secret. The absence of an ownership check is certain regardless of discoverability.",
+      "The claim that the July credential exposure is gone from history rests on a pickaxe search of `env.ts` for the `AKIA` prefix returning no commits. That is consistent with a history rewrite but does not prove one; it also cannot speak to credentials in other files or in forks and existing clones. Rotation should be confirmed with the team independently of this report.",
+      "MongoDB operator injection is marked CHECK rather than HOLDS. The DTOs reviewed are validated and the repositories build filters structurally, but 63 controllers were not exhaustively audited for raw filter pass-through.",
+      "The test suite was run once on a developer machine with `TZ=UTC`; 26 failures across 3 suites were observed. Whether those are genuine regressions or environment-dependent is not established — `shifts/test/interval-coverage.spec.ts` was the only failing spec identifiable from the output. The relevant conclusion for the roadmap is that the suite cannot be made a CI gate until they are resolved, whichever they are.",
+      "`server-hotfix/` was not compared against this repository. If it carries production fixes absent from `Alpha/0.0.0.2`, then this report describes a tree that is not what production runs — which is the reason F14 exists.",
+      "The eight capability gaps were re-verified by inspecting the committed task definitions and searching for IaC and APM markers. They describe the repository; if the surrounding AWS account carries IAM roles, health checks or autoscaling configured by hand outside version control, those exist but are undocumented, which is the same finding stated differently."
+    ]
+  },
+
+  "findings": [
+    {
+      "id": "F1",
+      "title": "Any authenticated user can read any candidate's record and compliance file, with a projection of their choosing",
+      "ruleId": "SEC-021",
+      "group": "Authentication & Authorisation",
+      "layer": "Backend",
+      "dimension": "security",
+      "riskDimension": "Security",
+      "criticality": "High",
+      "priority": "P0",
+      "phase": 1,
+      "gate": "blocks-prod",
+      "confidence": "Confirmed",
+      "claim": "`GET /v1/candidates/:id`, `:id/compliance`, `:id/compliance/banner` and `/bulk` are declared with role-unrestricted `@Auth()`, and the handlers perform no ownership check — `findById` passes straight through to `super.findById(id, projection)` with a projection built from a caller-supplied query parameter.",
+      "evidence": [
+        { "file": "src/modules/candidates/candidates.controller.ts", "line": 231, "snippet": "@Get(':id')\n@Auth()", "note": "Role-unrestricted. The same controller correctly uses `@Auth(UserRoleEnum.CRM_ADMIN)` on fourteen other routes, so this is a gap rather than a convention." },
+        { "file": "src/modules/candidates/candidates.controller.ts", "line": 236, "snippet": "const proj = convertToMongoProjection(dto.fields);\nconst doc = await this.candidatesService.findById(id, proj);", "note": "The caller chooses both the record (`id`) and the fields returned (`dto.fields`). No user context is consulted." },
+        { "file": "src/modules/candidates/candidates.service.ts", "line": 259, "snippet": "async findById(\n  id: string,\n  projection?: ProjectionFields<CandidateDocument>,\n): Promise<CandidateDocument> {\n  return super.findById(id, projection);\n}", "note": "The service layer adds no scoping either — the override exists only to narrow the type." },
+        { "file": "src/modules/candidates/candidates.controller.ts", "line": 175, "snippet": "@Get(':id/compliance')\n@Auth()", "note": "The handler passes `user.role` into the service, which shapes which fields come back — but never restricts *which candidate* may be read." },
+        { "file": "src/modules/common/guards/roles.guard.ts", "line": 18, "snippet": "if (!roles || !roles?.length) {\n  return true;\n}", "note": "This is what makes bare `@Auth()` accept every role, including `CANDIDATE`." }
+      ],
+      "reasoning": "Violates the invariant that a candidate can read only their own record. Authentication has been mistaken for authorisation: the guard proves the caller holds a valid JWT and the handler then trusts the `id` in the path. Because the projection is caller-controlled, the exposure is not limited to whatever the UI happens to request — a caller can name any field on the candidate document explicitly. In a healthcare staffing platform the compliance file is the regulatory record of right-to-work, DBS and health clearance, so this is sensitive personal data rather than a profile page.",
+      "reproduction": "Sign in to the candidate mobile app to obtain a `CANDIDATE` JWT. Call `GET /v1/candidates/<another candidate's id>?fields=personalDetails,complianceFormSections` with that token. The response is the other candidate's document, restricted only to the fields requested. `GET /v1/candidates/<id>/compliance` likewise returns their compliance record.",
+      "impact": "Restores tenant isolation on the most sensitive records in the platform by binding every candidate read to the requesting user's own identity, so a candidate token can no longer enumerate other candidates' personal and compliance data.",
+      "refutation": "Checked for a global authorisation guard that might scope reads centrally — the only `APP_GUARD` is `ThrottlerBehindProxyGuard`, which is rate limiting. Checked whether `RolesGuard` consults anything beyond the role claim — it extends `JwtAuthGuard` and then tests `user.role === role` only. Checked whether the service or repository applies an implicit owner filter — `findById` delegates to the base repository unchanged. Checked whether `getCompliance`'s `user.role` argument provides ownership scoping — it selects which fields are returned, not which record. Checked whether CASL (present in the dependency tree) is applied on this path — it is not referenced in this controller, service or guard. Survives.",
+      "remediation": "Add an ownership check before the read: when the caller's role is `CANDIDATE`, require that the path `id` equals their own candidate id, and otherwise require `CRM_ADMIN`. The cleanest form is a dedicated guard or a `CandidateOwnershipInterceptor` so the rule is declared once rather than repeated per route, which also fixes `:id/compliance`, `:id/compliance/banner` and `/bulk` in the same change. Add a feature test asserting that a candidate token reading another candidate's id receives 403.",
+      "sampleFix": "// Declared once, applied to every candidate-scoped route\n@Get(':id')\n@Auth(UserRoleEnum.CRM_ADMIN, UserRoleEnum.CANDIDATE)\n@UseGuards(CandidateSelfOrAdminGuard)   // CANDIDATE => params.id must equal user.candidateId\nasync findById(...) { ... }",
+      "effortDays": 3,
+      "role": "Backend Engineer"
+    },
+    {
+      "id": "F2",
+      "title": "The declaration endpoints are entirely unauthenticated, and both controllers accept writes",
+      "ruleId": "SEC-005",
+      "group": "Authentication & Authorisation",
+      "layer": "Backend",
+      "dimension": "security",
+      "riskDimension": "Security",
+      "criticality": "High",
+      "priority": "P0",
+      "phase": 1,
+      "gate": "blocks-prod",
+      "confidence": "Confirmed",
+      "instances": 7,
+      "claim": "`candidates-declarations` and `declarations` carry no `@Auth`, no `@UseGuards` and no class-level guard, so their seven routes — including `POST` and two `PATCH` — are reachable by an anonymous caller. Unchanged since the July review, and broader than first recorded.",
+      "evidence": [
+        { "file": "src/modules/candidates-declarations/infrastructure/routes/candidates-declaration.controller.ts", "line": 24, "snippet": "@ApiTags('Candidates declarations')\n@Controller({ path: 'candidates-declarations', version: '1' })\nexport class CandidatesDeclarationController {", "note": "No guard at class level, and none on the three routes below it (`@Get()`, `@Get(':id')`, `@Patch(':id')`). The `Auth` decorator is not even imported." },
+        { "file": "src/modules/declarations/infrastructure/routes/declarations.controller.ts", "line": 42, "snippet": "@Post()", "note": "The related controller is worse: `@Post()` at 42, `@Get()` at 53, `@Get(':id')` at 68 and `@Patch(':id')` at 78, all unguarded — so declarations can be created anonymously, not only read and modified." },
+        { "file": "src/modules/candidates-declarations/infrastructure/dto/update-candidates-declaration.dto.ts", "line": 6, "snippet": "export class UpdateCandidatesDeclarationDto {\n  fields: AfsFieldDto[];\n}", "note": "The PATCH body replaces the declaration's `fields` array — the answers themselves." },
+        { "file": "src/modules/common/decorators/auth.ts", "line": 7, "note": "Sibling comparison: 52 of 63 controllers use this decorator. Of the nine that do not, seven are plausibly public (blog posts, postcode lookup, mobile config, roles, skills, SMS verification, web-push subscriptions); these two are not." }
+      ],
+      "reasoning": "Declarations are the regulatory attestations behind a placement — the candidate's own statements about right to work, health and conduct. Anonymous read is a disclosure of personal data; anonymous write is worse, because it undermines the integrity of a compliance record the agency relies on to evidence that a worker was cleared. That this survived a review cycle while 52 sibling controllers were correctly decorated suggests the two modules are simply not on anyone's list.",
+      "reproduction": "With no credential at all, `GET /v1/candidates-declarations` returns the paginated list. `PATCH /v1/candidates-declarations/<id>` with `{\"fields\":[...]}` rewrites that declaration's answers. `POST /v1/declarations` creates a new declaration.",
+      "impact": "Closes an open read and write path into the platform's compliance records, restoring both the confidentiality of candidates' declarations and the evidentiary integrity the agency depends on.",
+      "refutation": "Checked for a class-level decorator above the controller — there is none; the file's imports do not include `Auth` or `UseGuards`. Checked for a global authentication guard — only the throttler is global. Checked whether an API gateway or ALB rule might authenticate ahead of the application — no such configuration appears in the seven committed task definitions, and the other 52 controllers would not need `@Auth` if one existed. Survives, with wider scope than the July finding, which covered only the `candidates-declarations` read and patch.",
+      "remediation": "Apply `@Auth(UserRoleEnum.CRM_ADMIN)` to both controllers, then add candidate self-access where the mobile app genuinely needs it, using the same ownership guard built for F1. Audit the remaining seven unguarded controllers and record a one-line justification for each that is intended to be public, so the next reviewer does not have to re-derive it.",
+      "effortDays": 2,
+      "role": "Backend Engineer"
+    },
+    {
+      "id": "F3",
+      "title": "The `.env` file is still copied into the production container image",
+      "ruleId": "SEC-002",
+      "group": "Deployment & Configuration",
+      "layer": "Infrastructure",
+      "dimension": "security",
+      "riskDimension": "Security",
+      "criticality": "High",
+      "priority": "P0",
+      "phase": 1,
+      "gate": "blocks-prod",
+      "confidence": "Confirmed",
+      "claim": "The runtime stage copies `.env` out of the builder, and `.dockerignore` does not exclude it, so every credential the application uses is a file inside the published image. Unchanged since July.",
+      "evidence": [
+        { "file": "Dockerfile", "line": 33, "snippet": "COPY --chown=node:node --from=builder /app/.env ./", "note": "An explicit copy into the final runtime stage — not an accident of a broad `COPY`." },
+        { "file": "Dockerfile", "line": 6, "snippet": "COPY . .", "note": "The builder stage takes the whole working directory, which is how `.env` reaches the builder in the first place." },
+        { "file": ".dockerignore", "line": 1, "snippet": "node_modules\naws\ndocker-compose.yml\nDockerfile\ndocs", "note": "The complete file. `.env` is not listed, so nothing prevents it entering the build context." },
+        { "file": "aws/prod-api-task-definition.json", "note": "No `secrets` or `valueFrom` block in any of the seven task definitions, so the image's `.env` is the actual source of production configuration rather than a leftover (G2)." }
+      ],
+      "reasoning": "This is the remaining half of the July credential problem. The source-level exposure was fixed properly — `env.ts` now requires every value and carries no literals — but the deployed artefact still contains them, so anyone who can pull the image from ECR, or exec into a running task, reads the live secrets. Because there is no Secrets Manager integration, the file is load-bearing: removing the copy requires the replacement to exist first, which is why this and G2 are sequenced together in Phase 1.",
+      "impact": "Removes every credential from the deployable artefact so that image access no longer equals production access, and makes rotation a configuration change rather than a rebuild.",
+      "refutation": "Checked whether the copied `.env` is a harmless placeholder overridden at runtime by task-definition environment variables — the task definitions carry a plain `environment` block but no `secrets`, and the application reads configuration through `@nestjs/config` with `.env` loaded, so the file is authoritative. Checked whether the image is private enough for this to be acceptable — it is in a private ECR repository, which limits but does not remove the exposure, and does nothing about `docker exec` access to a running task. Survives.",
+      "remediation": "Move the secrets into AWS Secrets Manager or SSM Parameter Store and reference them from the task definitions' `secrets` block (G2), then delete line 33 and add `.env` to `.dockerignore`. Rotate every value as part of the move, since the current ones have been inside published images. Add a CI check that fails the build if `.env` is present in the final stage.",
+      "effortDays": 1,
+      "role": "DevOps Engineer"
+    },
+    {
+      "id": "F4",
+      "title": "The CRM permission model is managed and granted but never enforced on the server",
+      "ruleId": "SEC-005",
+      "group": "Authentication & Authorisation",
+      "layer": "Backend",
+      "dimension": "security",
+      "riskDimension": "Security",
+      "criticality": "High",
+      "priority": "P1",
+      "phase": 2,
+      "gate": "warning",
+      "confidence": "Confirmed",
+      "claim": "A `crm-permissions` module built this cycle provides per-user, per-page permission grants and a `CheckCrmPermissionUseCase`, but that use-case is called from nowhere outside its own module — so the permissions are advisory and the API serves every endpoint regardless of them.",
+      "evidence": [
+        { "file": "src/modules/crm-permissions/domain/interfaces/use-cases/check-crm-permission.usecase.ts", "line": 1, "note": "The enforcement primitive exists and is named for exactly this purpose." },
+        { "file": "src/modules/crm-permissions/domain/interfaces/use-cases/update-crm-user-permissions.usecase.ts", "line": 1, "note": "Alongside grant, sync and page-registry use-cases and a `cannot-edit-own-crm-permissions` error — the management side is carefully built." },
+        { "file": "src/modules/common/guards/roles.guard.ts", "line": 22, "snippet": "return roles.some((role) => user.role === role);", "note": "The only authorisation decision the request path makes. There is no permission lookup anywhere in the guard chain." },
+        { "file": "src/modules/crm-permissions/crm-permissions.controller.ts", "note": "Gated on `@Auth(UserRoleEnum.CRM_ADMIN)` like the other new modules. A tree-wide search for `CheckCrmPermission` outside `src/modules/crm-permissions` returns no call sites." }
+      ],
+      "reasoning": "The system presents an access control that does not control access. A CRM user whose permission for, say, invoices or payment history has been withheld sees the page hidden by the front end and can still call `GET /v1/invoices` directly with their own token. That is a straightforward vertical privilege issue, and it is also a governance problem: an administrator who restricts a colleague's access reasonably believes they have restricted it.",
+      "reproduction": "Grant a CRM user no permission for a page through the permissions screen, then call that page's endpoint directly with their token. The request succeeds, because `RolesGuard` tests only `user.role === CRM_ADMIN`.",
+      "impact": "Makes the permission model real, so that withholding a page actually withholds the data behind it and the CRM's access configuration becomes a trustworthy control.",
+      "refutation": "Checked whether enforcement happens in an interceptor or middleware rather than a guard — searched the whole tree for the use-case and its method name outside the owning module and found no call site. Checked whether CASL, which is in the dependency tree, bridges the gap — it is not referenced from the guard chain or from the new controllers. Checked whether the permissions are intended only to drive navigation, which would make this a naming problem rather than a defect — the module models per-page grants with an explicit `check` use-case and a guard against editing one's own permissions, which is the shape of an access control, not a menu. Priority held at P1 rather than P0 because exploitation requires an already-trusted CRM account rather than a candidate or anonymous caller.",
+      "remediation": "Add a `@RequiresCrmPermission('<page-key>')` decorator that resolves `CheckCrmPermissionUseCase` in a guard, and apply it alongside `@Auth(CRM_ADMIN)` on the controllers whose pages the model covers. Drive the page keys from the existing registry so the decorator and the permissions screen cannot drift. Add a test asserting that a user without a page's permission receives 403 from its endpoint.",
+      "effortDays": 4,
+      "role": "Backend Engineer",
+      "rationale": "P1 rather than P0 because the caller must already hold a CRM_ADMIN token; the data exposed is internal rather than cross-tenant. Placed in Phase 2 because the decorator and page-key mapping is design work that should follow the Phase 1 ownership guard, which it can reuse."
+    },
+    {
+      "id": "F5",
+      "title": "Sixty-five endpoint declarations use role-unrestricted `@Auth()`, which the guard treats as all roles",
+      "ruleId": "SEC-005",
+      "group": "Authentication & Authorisation",
+      "layer": "Backend",
+      "dimension": "security",
+      "riskDimension": "Security",
+      "criticality": "High",
+      "priority": "P1",
+      "phase": 2,
+      "gate": "warning",
+      "confidence": "Confirmed",
+      "instances": 65,
+      "claim": "`@Auth()` with no arguments produces a `RolesGuard` with an empty role list, which returns `true` for any authenticated caller; 65 endpoint declarations across the API use it, so a candidate token is accepted wherever a CRM token would be.",
+      "evidence": [
+        { "file": "src/modules/common/guards/roles.guard.ts", "line": 18, "snippet": "if (!roles || !roles?.length) {\n  return true;\n}", "note": "The mechanism. The decorator's own docblock states it plainly: \"When used without parameters, then access is given to all roles.\"" },
+        { "file": "src/modules/candidates/candidates.controller.ts", "line": 164, "snippet": "@Get('/bulk')\n@Auth()", "note": "One of the 65, and the one with the clearest consequence — bulk candidate retrieval open to any role. F1 is this finding's worst instance." },
+        { "file": "src/modules/compliance/compliance.controller.ts", "note": "Among the twelve-plus controllers carrying bare `@Auth()` alongside CRM-domain data: clients-sites, clients-headquarters, clients-departments, files, availability and candidate-authorised-clients are others." },
+        { "file": "src/modules/candidates/candidates.controller.ts", "line": 104, "snippet": "@Auth(UserRoleEnum.CRM_ADMIN, UserRoleEnum.CANDIDATE)", "note": "The counter-example in the same file: where a route genuinely serves two roles, the author listed both explicitly. That is the correct idiom and it proves bare `@Auth()` is an omission rather than a shorthand for it." }
+      ],
+      "reasoning": "The project has a perfectly good role-based idiom and uses it correctly in the large majority of places. Bare `@Auth()` reads as \"requires login\", which is what the author almost certainly meant, but the guard implements it as \"requires login, any role\" — so the distinction between a candidate and an internal staff member disappears on 65 endpoints. This is the systemic cause of which F1 is the sharpest instance; fixing F1 alone leaves the rest.",
+      "impact": "Re-establishes the boundary between candidate and internal roles across the whole API, so that an endpoint intended for staff cannot be called with a candidate token.",
+      "refutation": "Checked whether an empty role list might be intended to mean 'authenticated only' with authorisation enforced downstream — in F1's case there is no downstream check, and no other bare-`@Auth()` route reviewed had one either. Checked whether `AllowedUsersGuards`, which sits beside `RolesGuard`, is used to compensate — it is not referenced from any controller reviewed. Checked a sample of bare-`@Auth()` routes for a `@CurrentUser()`-driven filter inside the handler; some have one and some do not, which is why this is reported as a systemic authorisation weakness rather than 65 separate data-exposure findings.",
+      "remediation": "Make the empty case explicit and safe: change `RolesGuard` so that an empty role list denies rather than permits, then sweep the 65 declarations and give each the roles it actually needs. Doing it in that order turns every missed site into a visible 403 in staging rather than a silent hole in production. Where a route genuinely serves any logged-in user, introduce a separate `@Authenticated()` decorator so the intent is stated rather than inferred.",
+      "effortDays": 5,
+      "role": "Backend Engineer",
+      "rationale": "Escalated from the P2 that a Medium-criticality internal issue would get, to P1, because it is systemic across 65 sites and is the root cause of the P0 in F1. Kept out of Phase 1 only because the sweep is larger than the targeted F1 fix and should not delay it."
+    },
+    {
+      "id": "F6",
+      "title": "The SendGrid webhook accepts unauthenticated, unvalidated input, while the WhatsApp webhook beside it is verified properly",
+      "ruleId": "SEC-005",
+      "group": "Integrations",
+      "layer": "Integrations",
+      "dimension": "security",
+      "riskDimension": "Security",
+      "criticality": "Medium",
+      "priority": "P1",
+      "phase": 1,
+      "gate": "warning",
+      "confidence": "Confirmed",
+      "claim": "`POST /v1/webhooks/sendgrid` carries no guard and takes `@Body() body: any`, so any caller can post arbitrary payloads into email-event processing — while the WhatsApp webhook in the same controller now verifies an HMAC signature over the raw request body.",
+      "evidence": [
+        { "file": "src/modules/webhooks/webhooks.controller.ts", "line": 22, "snippet": "@Post('/sendgrid')\n@UseInterceptors(RepostWebhookInterceptor('sendgrid'))\nsendgrid(@Body() body: any) {\n  return this.service.sendgrid(body);\n}", "note": "An interceptor for reposting, but no guard and no DTO — the payload is untyped and unvalidated." },
+        { "file": "src/modules/webhooks/webhooks.controller.ts", "line": 33, "snippet": "@Post('/whatsapp')\n@UseGuards(WhatsappWebhookSignatureGuard)", "note": "The sibling, added this cycle. Same controller, same class of integration, correctly verified." },
+        { "file": "src/main.ts", "line": 62, "snippet": "// rawBody is kept alongside the parsed body so webhook signature checks\n// (e.g. WhatsappWebhookSignatureGuard) can verify against the exact bytes\n// Meta signed, not a re-serialized copy that could differ in whitespace/key order.", "note": "The raw-body plumbing needed to verify a signature already exists and is documented — so the groundwork for fixing SendGrid is in place." }
+      ],
+      "reasoning": "SendGrid signs its event webhooks with an ECDSA signature precisely so this can be verified, and the application already captures the raw body needed to do it. The consequence of not verifying is that email delivery state — bounces, spam reports, unsubscribes — can be forged by anyone who knows the URL, which in turn drives suppression and notification behaviour. The WhatsApp guard added this cycle shows the team knows how to do this; SendGrid simply predates it.",
+      "impact": "Ensures email-event processing acts only on payloads provably sent by SendGrid, protecting delivery state and suppression lists from forged input.",
+      "refutation": "Checked whether the `RepostWebhookInterceptor` performs any verification — it handles replay/reposting, not authentication. Checked whether an unguessable URL path provides practical obscurity — the path is `/v1/webhooks/sendgrid`, and Swagger is served in non-production environments. Checked whether the service validates the payload shape before use — the parameter is typed `any` and passed through. Survives, unchanged from July except that the WhatsApp half of the finding is now fixed.",
+      "remediation": "Add a `SendgridWebhookSignatureGuard` modelled directly on `WhatsappWebhookSignatureGuard` — verify the `X-Twilio-Email-Event-Webhook-Signature` and timestamp headers against the public key using `request.rawBody`, failing closed on a missing key. Replace `@Body() body: any` with a validated DTO at the same time.",
+      "effortDays": 1.5,
+      "role": "Backend Engineer"
+    },
+    {
+      "id": "F7",
+      "title": "The pipeline still runs no test, lint or audit gate — and the suite it would run is red",
+      "ruleId": "DVO-002",
+      "group": "Delivery",
+      "layer": "Infrastructure",
+      "dimension": "devops",
+      "riskDimension": "Reliability",
+      "criticality": "Medium",
+      "priority": "P1",
+      "phase": 1,
+      "gate": "warning",
+      "confidence": "Confirmed",
+      "claim": "`.gitlab-ci.yml` has a `test` stage containing only a Sonar scan marked `allow_failure: true` and restricted to merge requests targeting `main`; no job runs `npm test`, a linter or a dependency audit. Executing the suite directly shows 26 of 343 tests failing across 3 suites.",
+      "evidence": [
+        { "file": ".gitlab-ci.yml", "line": 10, "snippet": "sonar_prod:\n  stage: test\n  ...\n  script:\n    - sonar-scanner\n  allow_failure: true", "note": "The only job in the test stage. `allow_failure: true` means it cannot block a merge, and the `only` block restricts it to merge requests whose target is `main`." },
+        { "file": "package.json", "line": 22, "snippet": "\"test\": \"TZ=UTC jest\",", "note": "The script exists and works — it is simply never invoked by CI." },
+        { "file": "src/modules/shifts/test/interval-coverage.spec.ts", "line": 690, "note": "One of the failing specs, identified from the run output. `npx jest --ci` reported: Test Suites 3 failed / 37 passed; Tests 26 failed / 317 passed / 343 total, in 250s." },
+        { "file": ".husky/pre-commit", "note": "A pre-commit hook exists, but a local hook is bypassable with `--no-verify` and does not constrain what reaches the protected branches." }
+      ],
+      "reasoning": "In July this was a finding about an absent gate against an absent suite, which made it mostly theoretical. It is now the thing standing between a real test suite and any benefit from it: 38 specs were written this cycle, and nothing runs them. The red suite compounds it — the gate cannot simply be switched on, because doing so would block every merge until 26 failures are resolved, which is why the two must be sequenced in one piece of work.",
+      "impact": "Turns the test suite the team has already written into an actual safety net, so a regression is caught before merge rather than discovered in production.",
+      "refutation": "Checked for a second pipeline definition — `.gitlab` exists as a directory but contains no additional CI jobs, and there is no GitHub Actions or Jenkins configuration. Checked whether Sonar's quality gate might fail the pipeline despite `allow_failure` — it cannot; that flag is what `allow_failure` means. Checked whether the 26 failures might be an artefact of running outside CI — possible, and recorded as a caveat; either way the suite is not currently green on a developer machine, which is the baseline a CI gate would inherit.",
+      "remediation": "Triage the 26 failures first — fix or quarantine them with an explicit skip and a ticket — then add a `test` job running `npm test` on every merge request, plus `eslint` and `npm audit --audit-level=high`. Remove `allow_failure` from Sonar once the baseline is clean. Make the jobs required for merge via branch protection, otherwise they are advisory in the same way Sonar is today.",
+      "effortDays": 3,
+      "role": "DevOps Engineer"
+    },
+    {
+      "id": "F8",
+      "title": "No graceful shutdown, so every task replacement drops in-flight requests and queue jobs",
+      "ruleId": "BE-003",
+      "group": "Reliability",
+      "layer": "Backend",
+      "dimension": "scalability",
+      "riskDimension": "Reliability",
+      "criticality": "Medium",
+      "priority": "P1",
+      "phase": 2,
+      "gate": "warning",
+      "confidence": "Confirmed",
+      "claim": "`main.ts` never calls `app.enableShutdownHooks()` and installs no SIGTERM or SIGINT handler, and no module implements `OnModuleDestroy` for the Mongo connection or the Bull queues — so when ECS replaces a task, the process is killed mid-work. Unchanged since July.",
+      "evidence": [
+        { "file": "src/main.ts", "line": 105, "note": "The bootstrap function ends with `listen` and the clustering branch; a search of `src/` for `enableShutdownHooks`, `SIGTERM` and `SIGINT` returns nothing." },
+        { "file": "src/modules/database/database.module.ts", "line": 15, "note": "The Mongoose connection is created through the module factory with no teardown hook, so it is not closed on exit." },
+        { "file": "aws/prod-api-task-definition.json", "note": "No `stopTimeout` is set either, so the platform default applies and the container receives SIGKILL a short, fixed interval after SIGTERM." }
+      ],
+      "reasoning": "Every deployment, scale-in and task recycle becomes a small burst of user-visible errors and, more importantly, abandoned Bull jobs — timesheet analysis, notifications and WhatsApp sends are all queue-driven, so a job killed mid-flight is work that silently does not happen. The absence of a `stopTimeout` means there is not even a grace window to drain into.",
+      "impact": "Makes deployments and scaling events invisible to users by draining in-flight requests and queue work before exit, and removes a recurring source of silently abandoned background jobs.",
+      "refutation": "Checked whether NestJS closes connections on its own at process exit — it does not without `enableShutdownHooks`, which wires the lifecycle events to process signals. Checked whether Bull's own graceful-close behaviour covers it — `queue.close()` is never called, so in-flight jobs are not returned to the queue cleanly. Checked whether the ALB's deregistration delay provides sufficient cover — it drains new connections but does not wait for the application's in-flight work. Survives.",
+      "remediation": "Call `app.enableShutdownHooks()` in `main.ts`, implement `OnModuleDestroy` to close the Mongoose connection and call `queue.close()` on each Bull queue, and set a `stopTimeout` in the task definitions long enough to cover the longest expected job. Verify by sending SIGTERM to a task under load and confirming no 5xx and no abandoned jobs.",
+      "effortDays": 2,
+      "role": "Backend Engineer"
+    },
+    {
+      "id": "F9",
+      "title": "One unconstrained environment variable gates Sentry, Swagger and clustering together",
+      "ruleId": "ARC-011",
+      "group": "Observability",
+      "layer": "Backend",
+      "dimension": "observability",
+      "riskDimension": "Reliability",
+      "criticality": "Medium",
+      "priority": "P1",
+      "phase": 2,
+      "gate": "warning",
+      "confidence": "Confirmed",
+      "claim": "`BACKEND_ORIGIN` is validated only as `Joi.string().default('test')` with no allowed-value list, yet four unrelated production behaviours branch on it being exactly `'production'` — so a typo or an unset value silently disables error reporting and clustering while exposing API documentation.",
+      "evidence": [
+        { "file": "src/modules/common/configs/env.ts", "line": 85, "snippet": "BACKEND_ORIGIN: Joi.string().default('test'),", "note": "No `.valid(...)` enum and no `.required()`, so any string passes validation and an absent value defaults to `'test'` — the non-production branch everywhere." },
+        { "file": "src/main.ts", "line": 46, "snippet": "enabled: process.env.BACKEND_ORIGIN === 'production',", "note": "Sentry error reporting. A mistyped value means the platform runs with no error tracking and nothing reports the fact." },
+        { "file": "src/main.ts", "line": 109, "snippet": "if (process.env.BACKEND_ORIGIN !== 'production') {", "note": "Swagger is served whenever the value is anything other than `'production'`, which publishes the full API surface including the unauthenticated routes in F2." },
+        { "file": "src/main.ts", "line": 123, "snippet": "if (process.env.BACKEND_ORIGIN === 'production') {", "note": "Clustering, so the same typo also means the service runs single-process." }
+      ],
+      "reasoning": "A single unvalidated string decides observability, documentation exposure and process topology at once, and every failure mode is silent and fails in the unsafe direction: no Sentry, Swagger published, one worker. The variable is also semantically overloaded — it names an origin but is used as an environment flag — which makes the coupling easy to miss when adding the next branch.",
+      "impact": "Makes environment-dependent behaviour explicit and verifiable, so a configuration mistake cannot silently disable error reporting or publish the API surface in production.",
+      "refutation": "Checked whether `NODE_ENV` is used as a second, corroborating signal — it is declared with its own default and is not consulted at these branch points. Checked whether the ECS task definitions set the value reliably — they do set it, so this is a latent configuration fragility rather than a live misconfiguration today; that is why it stays P1 rather than escalating.",
+      "remediation": "Constrain the variable with `Joi.string().valid('production','staging','test','development').required()` so a typo fails at boot rather than at runtime, and split the three concerns into intention-revealing flags (`SENTRY_ENABLED`, `SWAGGER_ENABLED`, `CLUSTERING_ENABLED`) defaulting from the environment name. Add a startup log line stating which features resolved on, so the resolved state is observable.",
+      "effortDays": 2,
+      "role": "Backend Engineer"
+    },
+    {
+      "id": "F10",
+      "title": "Test coverage is thin outside the newest modules, and the suite does not pass",
+      "ruleId": "TST-003",
+      "group": "Quality Assurance",
+      "layer": "Backend",
+      "dimension": "maintainability",
+      "riskDimension": "Maintainability",
+      "criticality": "Medium",
+      "priority": "P1",
+      "phase": 2,
+      "gate": "warning",
+      "confidence": "Confirmed",
+      "claim": "Spec files grew from 7 at the baseline commit to 38, concentrated in the modules added this cycle, but the legacy surface — including the authorisation paths carrying this report's P0s — has no tests, and 26 of 343 tests currently fail.",
+      "evidence": [
+        { "file": "src/modules/whatsapp-inbox/utils/topic-routing.spec.ts", "line": 1, "note": "Representative of the new work: 8 specs in `whatsapp-inbox`, 8 in `reports`, 5 in `users`, 3 in `shifts`. These are genuine unit tests of real logic, not scaffolding." },
+        { "file": "src/modules/candidates/candidates.controller.ts", "line": 231, "note": "By contrast the candidates module has 2 specs and none covering authorisation — so F1 could have been introduced and shipped with the suite green." },
+        { "file": "src/modules/shifts/test/interval-coverage.spec.ts", "line": 690, "note": "Part of the currently failing set: 3 suites and 26 tests fail on `npx jest --ci`." },
+        { "file": "package.json", "line": 26, "snippet": "\"test:e2e\": \"jest --config ./test/jest-e2e.json --verbose --forceExit\",", "note": "An e2e configuration exists; no e2e specs covering the authorisation boundary were found." }
+      ],
+      "reasoning": "The direction is right and worth protecting — the team now writes tests alongside new modules, and those tests are good. But coverage is where the new code is, not where the risk is: every P0 in this report sits on an untested path, and an authorisation regression would pass the suite today. The 26 failures matter mainly because they block F7 from converting the suite into a gate.",
+      "impact": "Puts a regression net under the authorisation boundary specifically, so the Phase 1 security fixes cannot be silently undone, and gets the suite to a state where CI can enforce it.",
+      "refutation": "Checked the baseline commit to confirm the improvement is real rather than a counting artefact — `git ls-tree` at d45c065 returns 7 spec files against 38 now. Checked whether an e2e suite covers the gaps the unit tests leave — the configuration exists but no authorisation-level e2e specs were found. Downgraded from the July finding of \"effectively no automated test coverage\", which is no longer accurate.",
+      "remediation": "Write the authorisation tests first, as they double as the acceptance criteria for F1, F2, F4 and F5: a candidate token reading another candidate returns 403; an unauthenticated declaration request returns 401; a CRM user without a page permission returns 403; a bare-`@Auth()` route rejects a candidate token. Then fix or quarantine the 26 failures so F7 can make the suite a gate, and add coverage reporting without a threshold initially so the trend is visible before it is enforced.",
+      "effortDays": 8,
+      "role": "QA Engineer"
+    },
+    {
+      "id": "F11",
+      "title": "Migrations can still run during the container image build",
+      "ruleId": "DVO-003",
+      "group": "Delivery",
+      "layer": "Infrastructure",
+      "dimension": "devops",
+      "riskDimension": "Reliability",
+      "criticality": "Medium",
+      "priority": "P2",
+      "phase": 3,
+      "gate": "clear",
+      "confidence": "Confirmed",
+      "claim": "The builder stage still executes `npm run migrate:up` when the `RUN_MIGRATIONS` build argument is true, which is its default — so a build run without an explicit override migrates whatever database the copied `.env` points at.",
+      "evidence": [
+        { "file": "Dockerfile", "line": 22, "snippet": "RUN if [ \"$RUN_MIGRATIONS\" = \"true\" ]; then npm run migrate:up; else echo \"Skipping migrations (RUN_MIGRATIONS=$RUN_MIGRATIONS)\"; fi", "note": "Conditional now, but the condition defaults to true." },
+        { "file": "Dockerfile", "line": 18, "snippet": "# Defaults to true so the GitLab beta deploy keeps migrating as before; prod builds\n# with RUN_MIGRATIONS=false (see the migrator stage) and local/Jenkins builds pass\n# --build-arg RUN_MIGRATIONS=false to avoid touching whatever database the copied .env points at.", "note": "The comment is candid about the hazard and documents the workaround, which is itself the evidence that the default is the wrong way round." },
+        { "file": "Dockerfile", "line": 10, "snippet": "FROM development as migrator\nCMD [\"npm\", \"run\", \"migrate:up\"]", "note": "The correct mechanism now exists — a dedicated migrator stage." },
+        { "file": "aws/prod-migrate-task-definition.json", "note": "And a production task definition to run it as a deployment step, which is how it should work everywhere." }
+      ],
+      "reasoning": "This was a P1 in July; the team has built the right answer and left the old path as the default for compatibility with the beta deploy. The residual risk is narrow but real: any build that forgets `--build-arg RUN_MIGRATIONS=false` applies schema changes to whichever database `.env` names, and because `.env` is baked into the image (F3), that is a live database rather than a local one.",
+      "impact": "Makes migration an explicit, observable deployment step in every environment, so a schema change can never be a side effect of building an image.",
+      "refutation": "Checked whether the beta pipeline could already use the migrator stage, making the default harmless — the deploy job builds the runtime image directly, so switching the default requires a matching pipeline change, which is why this is a small piece of work rather than a one-character fix. Downgraded from P1 to P2 on the strength of the migrator stage and the `prod-migrate` task definition now existing.",
+      "remediation": "Flip the default to `false`, and add a migrate step to the beta deploy job that runs the migrator stage as prod already does. Then remove the conditional from the builder entirely so there is one way to migrate.",
+      "effortDays": 1,
+      "role": "DevOps Engineer",
+      "rationale": "Downgraded from the July P1 because a dedicated migrator stage and a prod-migrate task definition now exist and are used in production; only the beta path and the default remain."
+    },
+    {
+      "id": "F12",
+      "title": "The secondary read preference for worker threads is silently discarded",
+      "ruleId": "DAT-007",
+      "group": "Data",
+      "layer": "Database",
+      "dimension": "data",
+      "riskDimension": "Performance",
+      "criticality": "Medium",
+      "priority": "P2",
+      "phase": 3,
+      "gate": "clear",
+      "confidence": "Confirmed",
+      "claim": "The worker-thread branch calls `uri.concat('/?readPreference=secondary')` without assigning the result; `String.prototype.concat` returns a new string and does not mutate, so the option never reaches the connection string and every worker reads from the primary. Unchanged since July.",
+      "evidence": [
+        { "file": "src/modules/database/database.module.ts", "line": 38, "snippet": "if (!isMainThread) uri.concat('/?readPreference=secondary');", "note": "The return value is dropped. The intent is unambiguous from the condition and the string." },
+        { "file": "src/modules/database/database.module.ts", "line": 6, "snippet": "import { isMainThread } from 'worker_threads';", "note": "The thread check itself is correct, which is what makes this a one-line defect rather than a design question." },
+        { "file": "src/main.ts", "line": 123, "note": "Clustering is enabled in production, so worker threads do run there and the intended offload is simply not happening." }
+      ],
+      "reasoning": "A deliberate scalability measure that has never taken effect. The practical consequence is that read load the team believed was spread across replicas has been concentrated on the primary for as long as the line has existed — so the primary's observed load is the true baseline, and any capacity planning done on the assumption that secondaries absorb worker reads is wrong.",
+      "impact": "Moves worker-thread read traffic onto replicas as designed, reducing primary load and making replica capacity count towards headroom.",
+      "refutation": "Checked whether the read preference is set elsewhere — in connection options or per-query — so that the line is merely redundant: no `readPreference` appears anywhere else in the module or in the repository base class. Checked whether appending to the URI this way would even be valid given the URI's existing shape — it would need care if the URI already carries a query string, which is why the fix should set the Mongoose option rather than rebuild the string.",
+      "remediation": "Pass `readPreference: 'secondary'` in the Mongoose connection options for the non-main-thread case rather than manipulating the URI, which avoids the query-string concatenation question entirely. Confirm with `db.currentOp()` or Atlas metrics that worker reads actually land on a secondary afterwards.",
+      "sampleFix": "MongooseModule.forRootAsync({\n  useFactory: () => ({\n    uri,\n    ...(isMainThread ? {} : { readPreference: 'secondary' }),\n  }),\n})",
+      "effortDays": 0.5,
+      "role": "Backend Engineer"
+    },
+    {
+      "id": "F13",
+      "title": "The internal machine-to-machine key is compared in non-constant time",
+      "ruleId": "SEC-016",
+      "group": "Integrations",
+      "layer": "Integrations",
+      "dimension": "security",
+      "riskDimension": "Security",
+      "criticality": "Low",
+      "priority": "P2",
+      "phase": 3,
+      "gate": "clear",
+      "confidence": "Confirmed",
+      "claim": "`InternalApiKeyGuard` authenticates the timesheet-analysis Lambda with `providedKey !== expectedKey`, a short-circuiting string comparison, where the WhatsApp guard beside it uses `timingSafeEqual`.",
+      "evidence": [
+        { "file": "src/modules/common/guards/internal-api-key.guard.ts", "line": 21, "snippet": "if (!providedKey || providedKey !== expectedKey) {\n  throw new UnauthorizedException('Invalid or missing internal API key');\n}", "note": "Correctly fails closed — including when the secret is unset, since any provided value differs from `undefined` — but the comparison itself leaks timing." },
+        { "file": "src/modules/common/guards/whatsapp-webhook-signature.guard.ts", "line": 30, "snippet": "providedDigest.length === expectedDigest.length &&\n  timingSafeEqual(Buffer.from(providedDigest), Buffer.from(expectedDigest));", "note": "The correct pattern, in the same directory — including the length pre-check that stops `timingSafeEqual` throwing on mismatched buffers." },
+        { "file": "src/modules/common/configs/env.ts", "line": 105, "snippet": "INTERNAL_LAMBDA_API_KEY: Joi.string(),", "note": "Optional rather than required. The guard handles the unset case safely, but the key should be required in any environment where the internal endpoints are reachable." }
+      ],
+      "reasoning": "A genuine weakness reported at its real severity. Remotely exploiting a timing side channel on a string comparison over HTTP is impractical in most settings, so this is hygiene rather than an exposure — but the correct implementation already exists a few lines away, which makes the inconsistency the more useful observation: the same review that produced the WhatsApp guard did not revisit this one.",
+      "impact": "Removes a timing side channel on a shared secret and makes the two machine-to-machine guards consistent, so the safe pattern is the only pattern in the codebase.",
+      "refutation": "Considered reporting this as fail-open, by analogy with guards that skip verification when the secret is unset — refuted: `!providedKey` throws first, and an unset `expectedKey` still fails every comparison, so the guard denies in every degenerate case. Considered whether the exposure is material enough to raise above Low — a practical remote timing attack would need to resolve sub-microsecond differences through the ALB and the event loop, which is not a realistic threat here. Reported at Low accordingly.",
+      "remediation": "Replace the comparison with a length check followed by `timingSafeEqual`, copying `WhatsappWebhookSignatureGuard`. Make `INTERNAL_LAMBDA_API_KEY` `required()` in the schema for environments that expose the internal endpoints.",
+      "effortDays": 0.5,
+      "role": "Backend Engineer"
+    },
+    {
+      "id": "F14",
+      "title": "An unversioned parallel copy of this application sits beside the repository",
+      "ruleId": "DVO-014",
+      "group": "Delivery",
+      "layer": "Infrastructure",
+      "dimension": "devops",
+      "riskDimension": "Maintainability",
+      "criticality": "Medium",
+      "priority": "P2",
+      "phase": 3,
+      "gate": "clear",
+      "confidence": "Needs-runtime-check",
+      "claim": "`D:/repos/novello/server-hotfix` contains this application at the same version (`server` 3.9.0) with no `.git` directory — 1,793 files of working copy that no branch, tag or commit describes.",
+      "evidence": [
+        { "file": "../server-hotfix/package.json", "note": "`name: server`, `version: 3.9.0` — identical to this repository's manifest, so it is a copy of this application rather than a separate component." },
+        { "file": "../server-hotfix/CLAUDE.md", "note": "Carries its own CLAUDE.md, Dockerfile, README and `aws/` directory, i.e. it is a complete deployable tree, not a partial extract." },
+        { "file": "../server-hotfix", "note": "No `.git` directory. 1,793 files against 6,478 in this repository (both excluding node_modules), so it is also not a full checkout — the difference is unexplained." }
+      ],
+      "reasoning": "The name says what it is for: urgent production fixes applied outside the normal branch. The risk is not the copy itself but the question it raises — if a hotfix was deployed from that tree and never merged back, then this repository is not what production runs, and every finding in this report describes a tree that differs from the deployed one in unknown ways. That is also why the confidence here is `Needs-runtime-check` rather than `Confirmed`: the defect is certain, its consequence depends on facts outside the repository.",
+      "impact": "Re-establishes version control as the single description of what runs in production, so a hotfix is a traceable commit rather than an undescribed directory.",
+      "refutation": "Checked whether it might be a build artefact or vendored dependency rather than a parallel working copy — it has its own CLAUDE.md, Dockerfile and AWS task definitions, so it is a tree someone works in. Checked whether it is simply an old checkout that predates the current branch — the version matches HEAD's, so it is at least contemporary. Not diffed against this repository, which is the open question the remediation closes.",
+      "remediation": "Diff `server-hotfix` against `Alpha/0.0.0.2` and against `main`, and establish whether it contains anything not in either. Merge or discard it on that basis, then delete the directory and make hotfixes a short-lived branch with the same pipeline as any other change. Until that diff is done, treat the gap between this report and production as unquantified.",
+      "effortDays": 1,
+      "role": "DevOps Engineer",
+      "rationale": "P2 despite the traceability concern because the remediation is investigative rather than corrective, and because it is a workspace-hygiene issue rather than a defect in the running system. Confidence is Needs-runtime-check: whether production diverges from this repository cannot be established from the repository."
+    },
+    {
+      "id": "F15",
+      "title": "Temporary, debug and log artefacts are committed at the repository root",
+      "ruleId": "MNT-002",
+      "group": "Repository Hygiene",
+      "layer": "Backend",
+      "dimension": "maintainability",
+      "riskDimension": "Maintainability",
+      "criticality": "Low",
+      "priority": "P2",
+      "phase": 3,
+      "gate": "clear",
+      "confidence": "Confirmed",
+      "claim": "`check-otp-tmp.js` and `start-dev-tmp.sh` are still present at the repository root, unchanged since July, and a committed `start-dev.log` has been added alongside them.",
+      "evidence": [
+        { "file": "check-otp-tmp.js", "note": "A one-off OTP check script, named `-tmp`, three months after being reported." },
+        { "file": "start-dev-tmp.sh", "note": "Likewise. Both sit beside `package.json`, so they are the first thing a new engineer sees." },
+        { "file": "start-dev.log", "note": "New since July — a committed log file, which will accrue noise in diffs and may capture environment detail from whoever generated it." }
+      ],
+      "reasoning": "Trivial individually, and listed here mainly because the set is growing rather than shrinking: the two files reported in July are still there and a third has joined them. A committed log is the one worth attention, since logs from this application carry identifiers and configuration detail.",
+      "impact": "Keeps the repository root meaningful and removes a committed log file that may carry environment detail, reducing onboarding friction and diff noise.",
+      "refutation": "Checked whether these are referenced by any npm script or CI job, which would make them real tooling despite the naming — `package.json` and `.gitlab-ci.yml` reference none of them. Checked `start-dev.log` for credential content before reporting it as merely untidy; it should still be reviewed before deletion rather than assumed benign.",
+      "remediation": "Delete all three and add `*.log` plus a `*-tmp.*` pattern to `.gitignore`. If either script is genuinely useful, move it under `scripts/` with a real name and a line in the README.",
+      "effortDays": 0.5,
+      "role": "Backend Engineer"
+    }
+  ],
+
+  "gaps": [
+    {
+      "capability": "ECS task IAM role (taskRoleArn)",
+      "area": "Infrastructure",
+      "status": "missing",
+      "why": "Re-verified: none of the seven committed task definitions declares a `taskRoleArn`, so the application has no identity of its own and reaches S3, SES and other AWS services through static `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` values from `.env`. Those are the same long-lived keys that ship inside the image (F3), so the two findings compound: image access yields durable AWS credentials rather than a short-lived, scoped token.",
+      "recommendation": "Create a task role scoped to the specific buckets and services this service uses, attach it with `taskRoleArn` in each task definition, and remove the static key pair from configuration entirely so the SDK resolves credentials from the task metadata endpoint.",
+      "priority": "P0",
+      "phase": 1,
+      "effortDays": 2,
+      "role": "DevOps Engineer",
+      "layer": "Infrastructure"
+    },
+    {
+      "capability": "Secrets Manager / SSM Parameter Store integration",
+      "area": "Infrastructure",
+      "status": "missing",
+      "why": "Re-verified: no `secrets` or `valueFrom` block appears in any task definition, so `.env` inside the image remains the only source of configuration. This is the prerequisite for F3 — the copy at `Dockerfile:33` cannot be removed until the values are available another way.",
+      "recommendation": "Move every credential into Secrets Manager (or SSM Parameter Store for non-secret config), reference them from the task definitions' `secrets` block so they arrive as environment variables at task start, and rotate all of them during the move since the current values have shipped inside images.",
+      "priority": "P0",
+      "phase": 1,
+      "effortDays": 3,
+      "role": "DevOps Engineer",
+      "layer": "Infrastructure"
+    },
+    {
+      "capability": "Container health check in the task definition",
+      "area": "Infrastructure",
+      "status": "missing",
+      "why": "Re-verified: no `healthCheck` block in any of the seven task definitions. ECS therefore judges liveness only by whether the process is running, so a task whose event loop is blocked or whose Mongo connection has failed keeps receiving traffic until the ALB's own check happens to notice. Combined with the absence of graceful shutdown (F8), task replacement is both unobserved and abrupt.",
+      "recommendation": "Add a `/health` endpoint that checks Mongo, Redis and Elasticsearch connectivity, wire it into each task definition's `healthCheck` with a sensible interval and retry count, and point the ALB target group at the same endpoint.",
+      "priority": "P1",
+      "phase": 1,
+      "effortDays": 1,
+      "role": "DevOps Engineer",
+      "layer": "Infrastructure"
+    },
+    {
+      "capability": "Orchestration-level container hardening",
+      "area": "Infrastructure",
+      "status": "missing",
+      "why": "Re-verified: the task definitions set no `readonlyRootFilesystem`, no `user` override and no dropped Linux capabilities. The Dockerfile does at least `COPY --chown=node:node` and the base image provides a `node` user, so the application is better placed than many — but nothing at the orchestration layer enforces it.",
+      "recommendation": "Set `readonlyRootFilesystem: true` with explicit writable volumes where genuinely needed, pin the container `user` to a non-root uid, and drop unneeded capabilities. Verify the application still starts, since the temp-file and log paths will need declaring.",
+      "priority": "P1",
+      "phase": 2,
+      "effortDays": 2,
+      "role": "DevOps Engineer",
+      "layer": "Infrastructure"
+    },
+    {
+      "capability": "Infrastructure as Code for the surrounding platform",
+      "area": "Infrastructure",
+      "status": "missing",
+      "why": "Re-verified: no Terraform, Bicep, CDK, CloudFormation or Serverless definition anywhere in the repository. The seven task definitions are committed JSON, which is genuinely better than nothing, but the cluster, ALB, target groups, security groups, ECR repositories, Mongo and Redis instances, and the IAM policies that F3 and G1 depend on exist only as console state. Rebuilding or auditing the platform means reading the console.",
+      "recommendation": "Codify the platform incrementally, starting with the pieces the Phase 1 work touches — IAM roles, Secrets Manager entries and the ECS services — so that the security fixes are themselves reviewable and reproducible rather than another set of console changes.",
+      "priority": "P1",
+      "phase": 3,
+      "effortDays": 10,
+      "role": "DevOps Engineer",
+      "layer": "Infrastructure"
+    },
+    {
+      "capability": "Application performance monitoring",
+      "area": "Observability",
+      "status": "missing",
+      "why": "Re-verified: Sentry is present for errors, but `package.json` contains no APM or tracing package — no Datadog, New Relic, OpenTelemetry or Elastic APM. So there is no endpoint latency distribution, no database query timing and no trace across the API, the Bull workers and the analysis Lambda. The read-preference defect in F12 is a good illustration: it has silently concentrated load on the Mongo primary and no instrumentation would have shown it.",
+      "recommendation": "Add OpenTelemetry instrumentation for HTTP, Mongoose, Redis and Bull, export to whichever backend the team will actually watch, and alert on p95 latency and error rate per route. Propagate trace context into the Lambda call so the timesheet path is traceable end to end.",
+      "priority": "P1",
+      "phase": 2,
+      "effortDays": 3,
+      "role": "DevOps Engineer",
+      "layer": "Backend"
+    },
+    {
+      "capability": "Autoscaling policy",
+      "area": "Infrastructure",
+      "status": "missing",
+      "why": "Re-verified: no scaling policy accompanies the task definitions, so capacity is whatever desired-count was last set by hand. Shift and timesheet work is inherently peaky — weekly timesheet submission and shift-offer broadcasts both concentrate load — and the queue workers have the same fixed capacity as the API.",
+      "recommendation": "Add target-tracking policies on CPU and on ALB request count per target for the API service, and scale the queue service on Bull queue depth, which is the signal that actually reflects backlog. Sequence after G6 so the scaling signals are measured rather than guessed.",
+      "priority": "P2",
+      "phase": 3,
+      "effortDays": 2,
+      "role": "DevOps Engineer",
+      "layer": "Infrastructure"
+    },
+    {
+      "capability": "Load and capacity testing",
+      "area": "Resilience",
+      "status": "missing",
+      "why": "Re-verified: an `artillery.yml` exists in the sibling `server-hotfix` tree but there is no load-test configuration, scenario or result in this repository and no CI job that runs one. So no known limit exists for any endpoint, which is why F8, F12, G7 and G8 can only be reasoned about rather than measured — and why the capacity assumption behind the worker read-preference defect went unchallenged for months.",
+      "recommendation": "Establish a baseline load profile for the heaviest journeys — candidate search, shift listing, timesheet export — and run it against staging on a schedule, recording p95 and error rate so a regression is visible. Use the results to set the G7 scaling thresholds.",
+      "priority": "P2",
+      "phase": 3,
+      "effortDays": 5,
+      "role": "DevOps Engineer",
+      "layer": "Backend"
+    }
+  ],
+
+  "refutedCandidates": [
+    {
+      "claim": "Live credentials are still committed to source as environment-schema defaults, and the JWT secret is still pinned to a published literal — the two P0 findings from the July review.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "Both are fixed, and properly. `env.ts` was rewritten: 23 values are now `Joi.string().required()`, the twelve remaining `.default()` calls are all benign (`NODE_ENV`, booleans, `PASSWORD_HASH_ROUNDS: 10`, `JWT_EXPIRATION: '7d'`, faker-generated admin names, a localhost Elasticsearch node), and no commented-out validators remain anywhere in the file. `JWT_SECRET` and `DEFAULT_ADMIN_PASSWORD` are both `required()` with no default. A `-S\"AKIA\"` pickaxe over the file's history returns no commits, consistent with the history having been cleaned. This is the single largest improvement since the last review and is recorded under positive posture."
+    },
+    {
+      "claim": "Only 7 of 63 controllers apply any authorisation guard, so the overwhelming majority of the API is unauthenticated.",
+      "verdict": "Refuted",
+      "step": 3,
+      "reasoning": "A measurement error on the first pass, corrected before reporting. The project authenticates through a custom `@Auth(...roles)` decorator in `src/modules/common/decorators/auth.ts` which applies `UseGuards(RolesGuard(...))` internally, so counting `UseGuards` directly misses it. Recounted: 52 of 63 controllers use `@Auth`, and only 9 have no guard at all — seven of which are plausibly public by design. The real findings are narrower and different: two of the nine are not public (F2), and the decorator is frequently called with no role (F5)."
+    },
+    {
+      "claim": "CORS is configured to allow any origin — the July F9 finding.",
+      "verdict": "Downgraded",
+      "step": 3,
+      "reasoning": "The explicit `origin: '*'` has been removed; `app.enableCors()` is now called with only an `exposedHeaders` list. The underlying `cors` package still defaults to a permissive origin when none is given, so the effective behaviour is similar — but no `credentials: true` is set anywhere, and the API authenticates with a Bearer token rather than cookies, so there is no ambient credential for a hostile origin to ride. That removes the mechanism that made the original finding matter. Retained as a hardening suggestion rather than a finding."
+    },
+    {
+      "claim": "The new WhatsApp webhook is an unauthenticated entry point, like the SendGrid one beside it.",
+      "verdict": "Refuted",
+      "step": 3,
+      "reasoning": "It is properly verified. `WhatsappWebhookSignatureGuard` computes an HMAC-SHA256 over `request.rawBody` with `WHATSAPP_APP_SECRET`, throws `UnauthorizedException` when the header, the secret or the raw body is missing — so it fails closed, including when the secret is unset — and compares with `timingSafeEqual` behind an explicit length check that avoids the throw-on-mismatched-length footgun. `main.ts` captures `rawBody` specifically so the comparison is against the exact bytes Meta signed. Recorded under positive posture; it is the sibling that makes F6 unambiguous."
+    },
+    {
+      "claim": "The internal Lambda API key guard fails open when `INTERNAL_LAMBDA_API_KEY` is unset, since the variable is optional in the schema.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "Traced both degenerate cases. `!providedKey` throws first, so a caller sending no header is rejected regardless. If the secret is unset, `expectedKey` is `undefined` and any provided value fails `providedKey !== expectedKey`, so the guard denies every request rather than admitting them. It fails closed in both directions. The residual weakness is only that the comparison is not constant-time, reported at its real severity as F13."
+    },
+    {
+      "claim": "MongoDB operator injection through request-derived query filters in the new modules.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "The DTOs reviewed across the new modules are `class-validator`-decorated with explicit field types, and the repositories build filter objects structurally rather than spreading a request body into a query. The one caller-controlled path into a query is the `fields` projection in `GetCandidateById`, which selects fields rather than injecting operators — reported as the amplifier in F1 rather than as injection. Marked CHECK rather than HOLDS in the invariants because 63 controllers were not exhaustively audited."
+    },
+    {
+      "claim": "The `redis/` directory in the workspace is a vendored third-party binary committed to this repository.",
+      "verdict": "Refuted",
+      "step": 2,
+      "reasoning": "It is a sibling directory in the same workspace (`D:/repos/novello/redis`), not part of this repository — it contains `redis-server.exe`, `redis-cli.exe` and Windows service configuration, and has no `.git` of its own. It is a developer's local Redis install sitting beside the checkouts. Noted here so it is not mistaken for a supply-chain finding against this repo; it is not in the build context and `.dockerignore` is irrelevant to it."
+    },
+    {
+      "claim": "Test coverage is effectively absent — the July F8 finding.",
+      "verdict": "Downgraded",
+      "step": 2,
+      "reasoning": "No longer accurate. `git ls-tree` at the baseline commit returns 7 spec files; HEAD has 38, concentrated in the modules added this cycle (8 in `whatsapp-inbox`, 8 in `reports`, 5 in `users`) and testing real logic rather than scaffolding. The finding is retained as F10 at reduced scope — coverage is thin where the risk is, the suite is red, and CI does not run it — but the blanket claim is refuted."
+    }
+  ],
+
+  "positivePosture": [
+    {
+      "title": "Both July P0s were fixed properly, not papered over",
+      "detail": "`env.ts` was rewritten rather than patched: every credential is now `Joi.string().required()` with no literal default, the commented-out validators that sat beside the hardcoded values have been restored, and the twelve remaining defaults are all non-sensitive. A pickaxe search of the file's history for the committed AWS key prefix returns no commits, which is consistent with the history having been cleaned as well. This was the worst exposure in the platform and it has been closed at the root."
+    },
+    {
+      "title": "The WhatsApp webhook signature guard is exemplary security code",
+      "detail": "`WhatsappWebhookSignatureGuard` verifies HMAC-SHA256 over `request.rawBody`, fails closed when the header, secret or raw body is absent, checks digest length before calling `timingSafeEqual` so the comparison cannot throw on a length mismatch, and `main.ts` carries a comment explaining why the raw bytes rather than a re-serialised body are used. Every detail that is usually got wrong here is got right."
+    },
+    {
+      "title": "Authorisation is applied consistently across every module added this cycle",
+      "detail": "All ten new modules reviewed — `whatsapp`, `whatsapp-inbox`, `crm-permissions`, `invoices`, `reports`, `shifts`, `umbrellas`, `support`, `candidates-payment-history` and `ai-timesheet-review-item` — declare an explicit role on their controllers (`@Auth(UserRoleEnum.CRM_ADMIN)`, or `CANDIDATE` for the candidate-facing one). None of the new surface repeats the bare-`@Auth()` pattern that F5 describes in the older code."
+    },
+    {
+      "title": "The team now writes tests alongside new features",
+      "detail": "Spec files went from 7 to 38, and they are genuine unit tests of real logic: `topic-routing.spec.ts` (264 lines), `mi-stats.spec.ts` (309 lines), `media.spec.ts` (221 lines) and `communication-history.spec.ts` in `whatsapp-inbox` alone, plus 8 specs across `reports` and 5 across `users`. The whole `whatsapp-inbox` module was built with its utilities extracted and separately tested, which is a markedly better shape than the surrounding code."
+    },
+    {
+      "title": "Migration and environment handling has been deliberately improved",
+      "detail": "A dedicated `migrator` container stage now exists with its own `CMD`, a `prod-migrate-task-definition.json` runs it as a production deployment step, and the build-time migration is behind a `RUN_MIGRATIONS` argument whose inline comment explains precisely which paths pass which value and why. Separate `staging-api` and `test-api` task definitions have also appeared. The July finding is genuinely half-solved rather than merely annotated."
+    },
+    {
+      "title": "The machine-to-machine boundary fails closed",
+      "detail": "`InternalApiKeyGuard` rejects a request with no key, and also rejects every request when the expected key is unset — so a misconfigured environment denies the Lambda rather than admitting the internet. The accompanying comment in `env.ts` documents both directions of the shared secret and names the two endpoints that consume it, which is the kind of note that makes a boundary reviewable."
+    },
+    {
+      "title": "The domain layering has held up under substantial growth",
+      "detail": "Seventeen modules were added or substantially reworked and all follow the established `domain/` (interfaces, errors, use-cases) and `infrastructure/` (routes, dto, presenters, proxy) split, with controllers depending on `UseCaseProxy` rather than on services directly. Adding this much surface without the structure degrading is the main reason architecture remains the strongest dimension at 3.5."
+    }
+  ],
+
+  "inventory": [
+    { "item": "Application", "value": "Novello Server API — central backend for the healthcare staffing platform" },
+    { "item": "Branch / commit", "value": "Alpha/0.0.0.2 @ 6318f445 (2026-10-29)" },
+    { "item": "Change since last review", "value": "151 commits, +23,489 / −1,540 lines across 459 files" },
+    { "item": "Framework", "value": "NestJS 10 / TypeScript on Node, clustered in production" },
+    { "item": "API surface", "value": "63 controllers — 52 using @Auth, 9 unguarded, 65 endpoint declarations role-unrestricted" },
+    { "item": "New modules this cycle", "value": "whatsapp, whatsapp-inbox, crm-permissions, invoices, reports, shifts, umbrellas, support, candidates-payment-history, ai-timesheet-review-item" },
+    { "item": "Datastores", "value": "MongoDB (Mongoose), Redis (cache + Bull queues), Elasticsearch" },
+    { "item": "Integrations", "value": "WhatsApp Cloud API, SendGrid, Firebase, Azure Document Intelligence, OpenAI, Ideal Postcodes, internal timesheet-analysis Lambda" },
+    { "item": "Automated tests", "value": "38 spec files, 343 tests — 26 failing across 3 suites; not run by CI" },
+    { "item": "Deployment", "value": "Docker to AWS ECS via GitLab CI; 7 committed task definitions (beta, staging, test, prod api/q, prod-migrate)" },
+    { "item": "Baseline findings resolved", "value": "2 of 13 fully fixed (both original P0s); 2 downgraded; 9 surviving" }
+  ],
+
+  "releaseGates": [
+    { "gate": "Broken authorisation", "findingRefs": ["F1", "F2", "F4", "F5"], "devTest": "Warning", "prod": "Blocks", "status": "Open", "note": "The dominant theme of this refresh. A candidate token reads any candidate's compliance file, the declaration endpoints are anonymous and writable, and the CRM permission model is unenforced." },
+    { "gate": "Secrets in the deployed artefact", "findingRefs": ["F3"], "devTest": "Warning", "prod": "Blocks", "status": "Open", "note": "`.env` is still copied into the runtime image and `.dockerignore` does not exclude it. Blocked jointly with G2, which must land first." },
+    { "gate": "Credentials in version control", "findingRefs": [], "devTest": "Clear", "prod": "Clear", "status": "Pass", "note": "Fixed since July — verified. Every secret in the environment schema is now `required()` with no literal default and no commented-out validator remains." },
+    { "gate": "Webhook authenticity", "findingRefs": ["F6"], "devTest": "Warning", "prod": "Warning", "status": "Open", "note": "WhatsApp now verifies an HMAC signature over the raw body and fails closed; SendGrid still accepts unauthenticated, untyped input. Warns rather than blocks because the consequence is forged email-delivery state rather than data loss." },
+    { "gate": "Machine-to-machine authentication", "findingRefs": ["F13"], "devTest": "Clear", "prod": "Warning", "status": "Open", "note": "The internal key guard fails closed in every degenerate case; only the non-constant-time comparison remains, which is hygiene rather than exposure." },
+    { "gate": "SQL / NoSQL injection", "findingRefs": [], "devTest": "Clear", "prod": "Clear", "status": "Pass", "note": "No operator-injection path found. DTOs are validated and repositories build filters structurally; the caller-controlled projection is reported as part of F1, not as injection." },
+    { "gate": "Pre-merge quality gate", "findingRefs": ["F7", "F10"], "devTest": "Warning", "prod": "Blocks", "status": "Open", "note": "No test, lint or audit job gates a merge, and the suite is red at 26 of 343. Blocks production because every Phase 1 security fix would otherwise ship unverified." },
+    { "gate": "Graceful deployment", "findingRefs": ["F8"], "devTest": "Clear", "prod": "Warning", "status": "Open", "note": "No shutdown hooks, no SIGTERM handling and no `stopTimeout`, so each task replacement drops in-flight requests and abandons queue jobs." },
+    { "gate": "Platform identity and configuration", "findingRefs": [], "devTest": "Warning", "prod": "Blocks", "status": "Open", "note": "No task IAM role and no Secrets Manager integration (G1, G2), so the service authenticates to AWS with long-lived keys that ship inside the image. Blocks jointly with F3." },
+    { "gate": "Release traceability", "findingRefs": ["F14"], "devTest": "Warning", "prod": "Warning", "status": "Needs-runtime-check", "note": "An unversioned `server-hotfix` copy of this application sits beside the repository. Until it is diffed, the gap between this report and what production runs is unquantified." }
+  ],
+
+  "phases": [
+    { "number": 1, "name": "Stabilisation & Risk Mitigation", "objective": "Close the authorisation holes an attacker can reach today and get the secrets out of the image. The three P0 findings sit here with the two P0 capability gaps they depend on — a task IAM role and Secrets Manager — plus the SendGrid guard and the CI gate, because a security fix that nothing verifies is not finished. Deliberately excludes the broad authorisation sweep so the targeted fixes are not held behind it." },
+    { "number": 2, "name": "Architecture & Scalability", "objective": "Make the Phase 1 fixes structural rather than local: deny-by-default roles across all 65 bare-`@Auth()` sites, real enforcement of the CRM permission model, and the authorisation tests that pin both. Adds the operational instrumentation — APM, graceful shutdown, container hardening — needed to see whether any of it is working." },
+    { "number": 3, "name": "Optimisation & Governance", "objective": "Resolve the long-standing correctness and hygiene items — the discarded read preference, the build-time migration default, the unversioned hotfix tree — and codify the platform so the Phase 1 and 2 changes become reproducible rather than another set of console edits. Ends with the load testing that turns capacity from an assumption into a measurement." }
+  ],
+
+  "architecturalRecommendations": [
+    { "aspect": "Authorisation model", "current": "A single `RolesGuard` tests `user.role` against a list; an empty list permits every role, and 65 endpoint declarations pass an empty list. A granular permission model exists but is never consulted.", "recommended": "Deny by default, with resource ownership and page permission expressed declaratively alongside the role.", "recommendation": "Invert the empty-list case in `RolesGuard` so it denies, add a `CandidateSelfOrAdmin` ownership guard and a `@RequiresCrmPermission` decorator backed by the existing `CheckCrmPermissionUseCase`, then sweep the bare-`@Auth()` sites. Doing the inversion first converts every missed site into a visible 403 in staging." },
+    { "aspect": "Secret handling", "current": "Secrets are correctly required by the schema and absent from source, but live in a `.env` file baked into the production image, with long-lived AWS keys among them.", "recommended": "No secret in the artefact; AWS access through a task role; everything else injected at task start.", "recommendation": "Land G2 and G1 together, then delete `Dockerfile:33` and add `.env` to `.dockerignore`. Rotate every value during the move, since the current ones have shipped inside images." },
+    { "aspect": "Webhook and machine-to-machine boundaries", "current": "Three boundaries, three standards: WhatsApp verified and constant-time, the internal Lambda key verified but not constant-time, SendGrid not verified at all.", "recommended": "One verification pattern, applied at every inbound boundary.", "recommendation": "Take `WhatsappWebhookSignatureGuard` as the reference implementation and bring the other two up to it — a `SendgridWebhookSignatureGuard` using the already-captured `rawBody`, and `timingSafeEqual` in the internal key guard." },
+    { "aspect": "Quality gate", "current": "38 specs exist and nothing runs them; the pipeline's only test-stage job is an advisory Sonar scan; the suite is red at 26 of 343.", "recommended": "Every merge request runs tests, lint and audit, and cannot merge red.", "recommendation": "Triage the 26 failures, then add the jobs and make them required in branch protection. Write the authorisation tests first so they double as the acceptance criteria for the Phase 1 findings." },
+    { "aspect": "Lifecycle and capacity", "current": "No shutdown hooks, no health check, no autoscaling policy and no load baseline; worker threads silently read from the primary.", "recommended": "Tasks that drain cleanly, report health, and scale on measured signals.", "recommendation": "Add shutdown hooks and a `/health` endpoint first because they are cheap and immediately useful, fix the read preference as a Mongoose option rather than URI string manipulation, then measure with APM and load tests before setting scaling thresholds." },
+    { "aspect": "Environment configuration", "current": "One unvalidated string, `BACKEND_ORIGIN`, decides Sentry, Swagger and clustering, and every failure mode is silent and unsafe.", "recommended": "Validated environment names and one explicit flag per behaviour.", "recommendation": "Constrain it with `Joi.valid(...).required()` and split the behaviours into named flags defaulting from the environment, then log the resolved feature state at boot." },
+    { "aspect": "Platform definition", "current": "Seven committed task definitions, and everything around them — cluster, ALB, security groups, IAM, datastores — in console state only.", "recommended": "The platform described in code, reviewed like code.", "recommendation": "Codify incrementally, beginning with the IAM roles and Secrets Manager entries that Phase 1 creates, so the security work is reproducible from the start rather than retrofitted." }
+  ],
+
+  "suggestions": [
+    { "suggestion": "Fix F1 with a reusable guard rather than an inline check", "description": "The same ownership rule is needed on `:id`, `:id/compliance`, `:id/compliance/banner` and `/bulk`, and will be needed again on the declaration endpoints in F2. Writing it once as a guard closes four routes in one change and gives F2 its mechanism for free.", "impact": "Closes the P0 across every affected route at once and avoids four separate inline checks drifting apart." },
+    { "suggestion": "Confirm the credential rotation that should have accompanied the env.ts fix", "description": "The schema no longer carries the nineteen values and the file's history appears clean, but credentials that were committed and shipped in images should be treated as compromised regardless. Whether the database user, AWS key pair, SendGrid key, Firebase service account and Elasticsearch credentials were actually rotated is not visible from the repository.", "impact": "Ensures the most valuable fix since the last review is complete rather than partial." },
+    { "suggestion": "Diff server-hotfix before relying on this report", "description": "An unversioned copy of this application at the same version sits in the workspace. If it carries production fixes that never came back, this report describes a tree that is not what runs.", "impact": "Quantifies the gap between the reviewed code and production, which currently cannot be stated." },
+    { "suggestion": "Decide what the CRM permission model is for", "description": "If it is an access control, F4 must be fixed. If it was only ever intended to drive navigation, rename it and document that the API does not enforce it — the current state is the dangerous middle, where administrators believe they have restricted access they have not.", "impact": "Removes a false sense of control and makes the next access-review conversation honest." },
+    { "suggestion": "Triage the 26 failing tests as a first-class task", "description": "They are the only thing standing between a real suite and a working CI gate. Whether they are genuine regressions or environment-dependent, the outcome is the same: until they are green or explicitly quarantined, F7 cannot be closed.", "impact": "Unblocks the quality gate that every other remediation depends on for verification." }
+  ],
+
+  "capabilities": [
+    { "practice": "Credentials absent from source control", "status": "good", "notes": "Fixed since July and verified: every secret in `env.ts` is `required()` with no literal default, no commented-out validators remain, and a history search for the committed key prefix returns nothing." },
+    { "practice": "Credentials absent from the deployed artefact", "status": "absent", "notes": "`.env` is copied into the runtime image at `Dockerfile:33` and `.dockerignore` does not exclude it (F3). No Secrets Manager integration exists to replace it (G2)." },
+    { "practice": "Authentication on every data-bearing endpoint", "status": "partial", "notes": "52 of 63 controllers use `@Auth`; of the nine unguarded, two handle candidate declarations and accept writes (F2)." },
+    { "practice": "Authorisation by role", "status": "partial", "notes": "The idiom is correct and used well in the new modules, but 65 endpoint declarations pass no role, which the guard treats as all roles (F5)." },
+    { "practice": "Resource-level ownership checks", "status": "absent", "notes": "No ownership check exists on candidate reads; `findById` delegates straight to the base repository with a caller-controlled projection (F1)." },
+    { "practice": "Granular permission enforcement", "status": "absent", "notes": "A full `crm-permissions` model is managed and granted but its `CheckCrmPermission` use-case is called from nowhere outside its own module (F4)." },
+    { "practice": "Inbound webhook verification", "status": "partial", "notes": "WhatsApp verifies HMAC-SHA256 over raw bytes and fails closed; SendGrid has no guard and takes `any` (F6)." },
+    { "practice": "Machine-to-machine authentication", "status": "partial", "notes": "`InternalApiKeyGuard` fails closed in every degenerate case but compares the secret with `!==` rather than `timingSafeEqual` (F13)." },
+    { "practice": "Input validation at the boundary", "status": "good", "notes": "A global `ValidationPipe` is configured and the DTOs reviewed across old and new modules are consistently `class-validator`-decorated. The one exception is the untyped SendGrid webhook body." },
+    { "practice": "Automated tests exist", "status": "partial", "notes": "38 spec files, up from 7, genuinely testing the new modules' logic — but none covering the authorisation paths that carry this report's P0s (F10)." },
+    { "practice": "Tests enforced before merge", "status": "absent", "notes": "No test job in the pipeline; the only test-stage job is an `allow_failure` Sonar scan on merge requests to `main` (F7). The suite is also red at 26 of 343." },
+    { "practice": "Error tracking", "status": "good", "notes": "Sentry is wired into bootstrap with request, tracing and error handlers, gated on the environment (though by the overloaded variable in F9)." },
+    { "practice": "Performance monitoring and tracing", "status": "absent", "notes": "No APM or OpenTelemetry package in the dependency tree; no endpoint latency, query timing or cross-service trace (G6)." },
+    { "practice": "Graceful shutdown", "status": "absent", "notes": "No `enableShutdownHooks`, no signal handling, no queue or connection teardown, and no `stopTimeout` in the task definitions (F8)." },
+    { "practice": "Health checks", "status": "absent", "notes": "No `healthCheck` block in any of the seven task definitions, so ECS judges liveness by process existence alone (G3)." },
+    { "practice": "Environment separation", "status": "good", "notes": "Committed task definitions now cover beta, staging, test and production, with separate api and queue services and a dedicated prod-migrate task." },
+    { "practice": "Migration discipline", "status": "partial", "notes": "A dedicated migrator stage and a `prod-migrate` task definition exist and production uses them; the builder stage still migrates by default for the beta path (F11)." },
+    { "practice": "Infrastructure as Code", "status": "absent", "notes": "No Terraform, Bicep, CDK or CloudFormation anywhere; everything outside the task definitions is console state (G5)." },
+    { "practice": "Least-privilege cloud identity", "status": "absent", "notes": "No `taskRoleArn` in any task definition; AWS access uses long-lived keys from the image's `.env` (G1)." },
+    { "practice": "Container hardening", "status": "partial", "notes": "The Dockerfile uses `COPY --chown=node:node` and a `node` user, but the task definitions set no read-only root filesystem, user override or dropped capabilities (G4)." },
+    { "practice": "Autoscaling and capacity planning", "status": "absent", "notes": "No scaling policy and no load-test baseline, so capacity is a hand-set desired count and no endpoint has a known limit (G7, G8)." },
+    { "practice": "Release traceability", "status": "partial", "notes": "The repository is clean and versioned, but an unversioned `server-hotfix` tree of the same application sits beside it (F14)." }
+  ],
+
+  "architecturalNarrative": "The honest headline of this refresh is that the team fixed the right thing first. The July report led on nineteen live credentials committed as Joi schema defaults with their validators commented out beside them, and a JWT secret pinned to a published literal; both are now gone, the schema requires every value, and the file's history appears to have been cleaned. That was the worst thing in the platform and it was dealt with at the root rather than annotated. The same cycle produced a WhatsApp webhook signature guard that is the best security code in the repository, a dedicated migration container stage with a production task definition to run it, separate staging and test environments, and a test suite five times the size of the one that existed in July.\n\nWhat has not kept pace is authorisation, and that is now what blocks release. The server has grown by seventeen modules and 23,000 lines, and the authorisation model underneath it is still a single guard comparing one JWT claim against a list of roles. Where that list is empty — 65 endpoint declarations — the guard admits every role, so the distinction between a candidate using the mobile app and an internal staff member simply does not exist on those routes. The sharpest consequence was traced end to end: `GET /v1/candidates/:id` is role-unrestricted, performs no ownership check, and takes its MongoDB projection from a query parameter, so a candidate's own token reads any other candidate's record field by field, compliance file included. Two declaration controllers remain entirely unauthenticated and both accept writes. And a granular CRM permission system built during this very cycle — grants, page registry, a `CheckCrmPermission` use-case, even a guard against editing your own permissions — is called from nowhere outside its own module, so it restricts the front end and nothing else.\n\nThe pattern across all three is the same one the July report described in a different area: the platform builds the right mechanism and then does not wire it to the thing that needs it. `CheckCrmPermission` exists but is never called. `rawBody` is captured for signature verification and SendGrid still does not verify. A migrator stage exists and the builder still migrates by default. 38 tests exist and CI runs none of them. Each individual gap is small; collectively they mean the codebase's intentions are consistently better than its effective behaviour, and a reader auditing the code finds controls that look present and are not connected.\n\nTwo older findings are worth naming because they have now survived two reviews. The worker-thread read preference has never worked — `uri.concat(...)` discards its result — so read load the team believes is on replicas has been on the primary the whole time, and with no APM nothing would have shown it. And `BACKEND_ORIGIN`, an unvalidated string, still decides Sentry, Swagger and clustering together, every failure mode silent and in the unsafe direction. Neither is urgent; both are the kind of thing that makes capacity and incident response harder than they need to be, and both are cheap to close.",
+
+  "lookingAhead": "Phase 1 is sixteen and a half days and closes everything an attacker can reach today. The two most valuable items are small: an ownership guard applied to four candidate routes, and `@Auth(CRM_ADMIN)` on two declaration controllers. The third, getting `.env` out of the image, is gated on Secrets Manager existing, which is why G2 and G1 sit in the same phase rather than later — and all three credentials in that chain should be rotated during the move, since the current values have shipped inside published images.\n\nThe judgement call in this roadmap is putting the broad authorisation sweep in Phase 2 rather than Phase 1. Inverting `RolesGuard` so an empty role list denies, and then giving each of the 65 sites the roles it needs, is the fix that makes F1 unrepeatable — but it will surface 403s in places nobody expected and needs a staging environment and a test suite to land safely. Doing the targeted fixes first and the sweep second gets the exposure closed this month and the structural fix done properly, rather than holding the former behind the latter.\n\nThe thing to protect through all of it is the trend. The new modules are consistently better than the old ones: explicit roles, extracted and tested utilities, a correctly built signature guard, candid comments explaining why a default is what it is. The remediation that matters most in the long run is not any single finding but closing the loop that would have caught them — triaging the 26 failing tests, making the suite a required gate, and writing the authorisation tests that turn this report's P0s into assertions. Once a candidate token reading another candidate's record fails in CI, that class of defect stops being something a review has to find."
+}

@@ -1,0 +1,9 @@
+node_modules/
+output/
+*.log
+.DS_Store
+Thumbs.db
+
+# Keep the directories, ignore generated contents
+!output/.gitkeep
+!assessments/.gitkeep
