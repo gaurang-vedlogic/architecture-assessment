@@ -158,6 +158,9 @@ Two optional outputs exist — a condensed `DECISION-BRIEF` behind `--brief` and
   "`OrderService` constructs its own `DbContext` at `order.service.ts:31`, so it cannot be tested
   without a live database" is.
 - **Do not pad the roadmap.** Every man-day must trace to a finding.
+- **Keep descriptions short.** Each finding, suggestion and strength gets a one-line title and a
+  description of 1–2 sentences: what is wrong, where, and why it matters. Detail belongs in
+  `evidence`, not in long prose.
 - Node only — **Python is not installed on this machine.**
 
 ## Scale
